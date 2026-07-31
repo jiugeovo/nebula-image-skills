@@ -8,27 +8,21 @@ import { randomUUID } from "node:crypto";
 import Busboy from "busboy";
 import {
   APINebulaClient,
-  buildEditFields,
-  buildEditTaskPayload,
-  buildGenerationPayload,
   saveImageResponseArtifacts,
-  saveTaskArtifacts,
 } from "./apinebula.js";
 import { getConfig } from "./config.js";
-import { applyPreset, getPresetSummary } from "./models.js";
+import { getPresetSummary, resolveImageOptions } from "./models.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const publicDir = path.join(projectRoot, "public");
 const lucideBundlePath = path.join(projectRoot, "node_modules", "lucide", "dist", "umd", "lucide.min.js");
-const terminalStatuses = new Set(["completed", "failed", "cancelled"]);
 const jobs = new Map();
 const outputRoots = new Map();
 const maxJobs = 20;
 const maxOutputRoots = 64;
 const maxBatchSize = 12;
 const maxBatchConcurrency = 4;
-export const DEFAULT_SYNC_EDIT_RESPONSE_FORMAT = "url";
 const maxMultipartBytes = 32 * 1024 * 1024;
 
 export async function startWebServer({ host = "127.0.0.1", port = 8787 } = {}) {
@@ -176,10 +170,10 @@ async function handleRequest(request, response) {
 }
 
 function createGenerationJob(body) {
-  validateGenerationRequest(body);
+  const selection = validateGenerationRequest(body);
 
   const id = randomUUID();
-  const job = createBaseJob(id, sanitizeRequest(body), {
+  const job = createBaseJob(id, sanitizeRequest({ ...body, ...selection.options, preset: selection.name }), {
     apiKey: cleanString(body.apiKey),
     baseUrl: validatedBaseUrl(body.baseUrl),
   });
@@ -190,11 +184,11 @@ function createGenerationJob(body) {
 }
 
 function createBatchGenerationJob(body) {
-  validateGenerationRequest(body);
-  const count = integerInRange(body.count, 2, maxBatchSize, "count");
+  const selection = validateGenerationRequest(body);
+  const count = integerInRange(body.count, 2, Math.min(maxBatchSize, selection.preset.capabilities.batchMax), "count");
   const concurrency = integerInRange(body.concurrency ?? 2, 1, Math.min(maxBatchConcurrency, count), "concurrency");
   const id = randomUUID();
-  const request = sanitizeRequest({ ...body, count, concurrency });
+  const request = sanitizeRequest({ ...body, ...selection.options, preset: selection.name, count, concurrency });
   const job = createBaseJob(id, request, {
     apiKey: cleanString(body.apiKey),
     baseUrl: validatedBaseUrl(body.baseUrl),
@@ -223,23 +217,70 @@ function createBatchGenerationJob(body) {
 
 function validateGenerationRequest(body) {
   if (!body || typeof body !== "object") throw requestError("JSON body is required.");
-  if (!body.prompt || typeof body.prompt !== "string") throw requestError("prompt is required.");
+  if (!cleanString(body.prompt)) throw requestError("prompt is required.");
   if (!body.preset && !body.model) throw requestError("preset or model is required.");
+  return resolveWebImageOptions(body, "generate");
+}
+
+function resolveWebImageOptions(body, mode) {
+  if (!cleanString(body.prompt)) throw requestError("prompt is required.");
+  try {
+    return resolveImageOptions(body.preset, {
+      model: cleanString(body.model),
+      prompt: cleanString(body.prompt),
+      n: body.n,
+      size: cleanString(body.size),
+      resolution: cleanString(body.resolution),
+      aspectRatio: cleanString(body.aspectRatio),
+      quality: cleanString(body.quality),
+      responseFormat: cleanString(body.responseFormat),
+      inputFidelity: cleanString(body.inputFidelity),
+    }, { mode });
+  } catch (error) {
+    throw requestError(error?.message || String(error), "invalid_model_options");
+  }
+}
+
+function publicImagePayload(selection, imageCount) {
+  return {
+    preset: selection.name,
+    group: selection.preset.group,
+    transport: selection.preset.transport,
+    model: selection.options.model,
+    prompt: selection.options.prompt,
+    n: selection.options.n,
+    size: selection.options.size,
+    resolution: selection.options.resolution,
+    aspectRatio: selection.options.aspectRatio,
+    quality: selection.options.quality,
+    responseFormat: selection.options.responseFormat,
+    inputFidelity: selection.options.inputFidelity,
+    imageCount,
+  };
 }
 
 function createSyncEditJob(form) {
   if (!form.fields.prompt) throw requestError("prompt is required.");
   if (!form.files.some((file) => file.fieldName === "image")) throw requestError("At least one image file is required.");
 
+  const selection = resolveWebImageOptions({
+    preset: form.fields.preset,
+    model: form.fields.model,
+    prompt: form.fields.prompt,
+    n: form.fields.n,
+    size: form.fields.size,
+    resolution: form.fields.resolution,
+    aspectRatio: form.fields.aspectRatio,
+    quality: form.fields.quality,
+    responseFormat: form.fields.responseFormat || form.fields.response_format,
+    inputFidelity: form.fields.inputFidelity || form.fields.input_fidelity,
+  }, "edit-sync");
+
   const id = randomUUID();
   const request = sanitizeEditRequest({
     mode: "edit-sync",
-    model: form.fields.model || "gpt-image-2",
-    prompt: form.fields.prompt,
-    size: form.fields.size || "1024x1024",
-    quality: form.fields.quality || "high",
-    responseFormat: form.fields.responseFormat || form.fields.response_format || DEFAULT_SYNC_EDIT_RESPONSE_FORMAT,
-    inputFidelity: form.fields.inputFidelity || form.fields.input_fidelity || "high",
+    preset: selection.name,
+    ...selection.options,
     outputDir: form.fields.outputDir,
     noDownload: form.fields.noDownload === "true",
   });
@@ -262,16 +303,16 @@ function createAsyncEditJob(body) {
   if (!body.prompt || typeof body.prompt !== "string") throw requestError("prompt is required.");
   const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.filter(Boolean) : [];
   if (!imageUrls.length) throw requestError("imageUrls is required for async edit.");
+  if (imageUrls.some((value) => !isHttpUrl(value))) throw requestError("imageUrls must contain valid http or https URLs.");
+
+  const selection = resolveWebImageOptions(body, "edit-async");
 
   const id = randomUUID();
   const request = sanitizeEditRequest({
     mode: "edit-async",
-    model: body.model || "gpt-image-2",
-    prompt: body.prompt,
+    preset: selection.name,
+    ...selection.options,
     imageUrls,
-    size: body.size,
-    quality: body.quality || "high",
-    responseFormat: body.responseFormat || "b64_json",
     outputDir: body.outputDir,
     noDownload: body.noDownload,
   });
@@ -323,63 +364,36 @@ async function runGenerationJob(job, options = {}) {
       apiKey: job.configOverrides?.apiKey,
       baseUrl: job.configOverrides?.baseUrl,
     });
-    const payload = buildGenerationPayload(
-      applyPreset(job.request.preset, {
-        model: job.request.model,
-        prompt: job.request.prompt,
-        size: job.request.size,
-        resolution: job.request.resolution,
-        aspectRatio: job.request.aspectRatio,
-        quality: job.request.quality,
-        responseFormat: job.request.responseFormat || "b64_json",
-      }),
-    );
+    const selection = resolveImageOptions(job.request.preset, job.request, { mode: "generate" });
+    const requestOptions = {
+      ...selection.options,
+      transport: selection.preset.transport,
+      timeoutMs: config.timeoutMs,
+    };
 
-    job.payload = payload;
-    job.status = "submitting";
+    job.payload = publicImagePayload(selection);
+    job.status = "processing";
     job.updatedAt = new Date().toISOString();
     await options.onUpdate?.(job);
 
     const client = new APINebulaClient(config);
-    const task = await client.createImageGenerationTask(payload);
-    const taskId = task.task_id || task.id;
-    if (!taskId) throw new Error(`APINebula did not return a task id: ${JSON.stringify(task)}`);
-
-    job.taskId = taskId;
-    job.remoteTask = task;
-    job.status = task.status || "queued";
+    const response = await client.generateImage(requestOptions);
+    job.taskId = response?.id || response?.responseId || null;
+    job.remoteTask = compactLargeResponse(response);
+    job.status = "saving";
     job.updatedAt = new Date().toISOString();
     await options.onUpdate?.(job);
 
-    const started = Date.now();
-    while (!terminalStatuses.has(job.status)) {
-      if (Date.now() - started > config.timeoutMs) {
-        throw new Error(`Timed out waiting for image task ${taskId}.`);
-      }
-      await sleep(config.pollIntervalMs);
-      const remoteTask = await client.getImageTask(taskId, { detail: true });
-      job.remoteTask = remoteTask;
-      job.status = remoteTask.status || job.status;
-      job.updatedAt = new Date().toISOString();
-      await options.onUpdate?.(job);
-    }
-
-    if (job.status === "completed") {
-      job.status = "saving";
-      job.updatedAt = new Date().toISOString();
-      const artifacts = await saveTaskArtifacts({
-        taskId,
-        model: payload.model,
-        finalTask: job.remoteTask,
-        outputDir: config.outputDir,
-        download: !job.request.noDownload,
-        fileStem: options.fileStem,
-      });
-      job.artifacts = publicArtifacts(artifacts, config.outputDir);
-      job.status = "completed";
-    } else {
-      job.error = job.remoteTask?.error || { message: `Task ended with status ${job.status}.` };
-    }
+    const artifacts = await saveImageResponseArtifacts({
+      response,
+      model: requestOptions.model,
+      outputDir: config.outputDir,
+      download: !job.request.noDownload,
+      fileStem: options.fileStem,
+    });
+    ensureSavedImageResult(artifacts, response, job.request.noDownload);
+    job.artifacts = publicArtifacts(artifacts, config.outputDir);
+    job.status = "completed";
 
     job.completedAt = new Date().toISOString();
     job.updatedAt = job.completedAt;
@@ -465,46 +479,53 @@ async function runBatchGenerationJob(job) {
 }
 
 async function runSyncEditJob(job, imageFiles) {
+  await runEditJob(job, imageFiles.map((file) => ({
+    path: file.path,
+    filename: file.filename,
+    contentType: file.contentType,
+  })), { cleanupFiles: imageFiles });
+}
+
+async function runAsyncEditJob(job) {
+  await runEditJob(job, job.request.imageUrls.map((url) => ({ url })));
+}
+
+async function runEditJob(job, images, { cleanupFiles } = {}) {
   try {
     const config = getConfig({
       outputDir: job.request.outputDir,
       apiKey: job.configOverrides?.apiKey,
       baseUrl: job.configOverrides?.baseUrl,
     });
-    const fields = buildEditFields({
-      model: job.request.model || "gpt-image-2",
-      prompt: job.request.prompt,
-      size: job.request.size,
-      quality: job.request.quality,
-      responseFormat: job.request.responseFormat || DEFAULT_SYNC_EDIT_RESPONSE_FORMAT,
-      inputFidelity: job.request.inputFidelity || "high",
-    });
+    const selection = resolveImageOptions(job.request.preset, job.request, { mode: job.request.mode });
+    const requestOptions = {
+      ...selection.options,
+      transport: selection.preset.transport,
+      images,
+      timeoutMs: config.timeoutMs,
+    };
 
-    job.payload = { ...fields, image_count: imageFiles.length };
-    job.status = "submitting";
+    job.payload = publicImagePayload(selection, images.length);
+    job.status = "processing";
     job.updatedAt = new Date().toISOString();
 
     const client = new APINebulaClient(config);
-    const response = await client.editImages({
-      fields,
-      images: imageFiles.map((file) => ({
-        path: file.path,
-        filename: file.filename,
-        contentType: file.contentType,
-      })),
-    });
-
-    job.remoteTask = response;
+    const response = await client.editImage(requestOptions);
+    job.taskId = response?.id || response?.responseId || null;
+    job.remoteTask = compactLargeResponse(response);
     job.status = "saving";
     job.updatedAt = new Date().toISOString();
+
     const artifacts = await saveImageResponseArtifacts({
       response,
-      model: fields.model,
+      model: requestOptions.model,
       outputDir: config.outputDir,
       download: !job.request.noDownload,
     });
+    ensureSavedImageResult(artifacts, response, job.request.noDownload);
     job.artifacts = publicArtifacts(artifacts, config.outputDir);
     job.status = "completed";
+
     job.completedAt = new Date().toISOString();
     job.updatedAt = job.completedAt;
     compactStoredJob(job);
@@ -515,77 +536,7 @@ async function runSyncEditJob(job, imageFiles) {
     job.updatedAt = job.completedAt;
     compactStoredJob(job);
   } finally {
-    await cleanupTempFiles(imageFiles);
-  }
-}
-
-async function runAsyncEditJob(job) {
-  try {
-    const config = getConfig({
-      outputDir: job.request.outputDir,
-      apiKey: job.configOverrides?.apiKey,
-      baseUrl: job.configOverrides?.baseUrl,
-    });
-    const payload = buildEditTaskPayload({
-      model: job.request.model || "gpt-image-2",
-      prompt: job.request.prompt,
-      imageUrls: job.request.imageUrls,
-      size: job.request.size,
-      quality: job.request.quality,
-      responseFormat: job.request.responseFormat || "b64_json",
-    });
-
-    job.payload = payload;
-    job.status = "submitting";
-    job.updatedAt = new Date().toISOString();
-
-    const client = new APINebulaClient(config);
-    const task = await client.createImageEditTask(payload);
-    const taskId = task.task_id || task.id;
-    if (!taskId) throw new Error(`APINebula did not return a task id: ${JSON.stringify(task)}`);
-
-    job.taskId = taskId;
-    job.remoteTask = task;
-    job.status = task.status || "queued";
-    job.updatedAt = new Date().toISOString();
-
-    const started = Date.now();
-    while (!terminalStatuses.has(job.status)) {
-      if (Date.now() - started > config.timeoutMs) {
-        throw new Error(`Timed out waiting for image edit task ${taskId}.`);
-      }
-      await sleep(config.pollIntervalMs);
-      const remoteTask = await client.getImageTask(taskId, { detail: true });
-      job.remoteTask = remoteTask;
-      job.status = remoteTask.status || job.status;
-      job.updatedAt = new Date().toISOString();
-    }
-
-    if (job.status === "completed") {
-      job.status = "saving";
-      job.updatedAt = new Date().toISOString();
-      const artifacts = await saveTaskArtifacts({
-        taskId,
-        model: payload.model,
-        finalTask: job.remoteTask,
-        outputDir: config.outputDir,
-        download: !job.request.noDownload,
-      });
-      job.artifacts = publicArtifacts(artifacts, config.outputDir);
-      job.status = "completed";
-    } else {
-      job.error = job.remoteTask?.error || { message: `Task ended with status ${job.status}.` };
-    }
-
-    job.completedAt = new Date().toISOString();
-    job.updatedAt = job.completedAt;
-    compactStoredJob(job);
-  } catch (error) {
-    job.status = "failed";
-    job.error = { message: error?.message || String(error) };
-    job.completedAt = new Date().toISOString();
-    job.updatedAt = job.completedAt;
-    compactStoredJob(job);
+    if (cleanupFiles) await cleanupTempFiles(cleanupFiles);
   }
 }
 
@@ -594,6 +545,7 @@ function sanitizeRequest(body) {
     preset: cleanString(body.preset),
     model: cleanString(body.model),
     prompt: cleanString(body.prompt),
+    n: optionalInteger(body.n),
     size: cleanString(body.size),
     resolution: cleanString(body.resolution),
     aspectRatio: cleanString(body.aspectRatio),
@@ -609,10 +561,14 @@ function sanitizeRequest(body) {
 function sanitizeEditRequest(body) {
   return {
     mode: cleanString(body.mode),
+    preset: cleanString(body.preset),
     model: cleanString(body.model),
     prompt: cleanString(body.prompt),
     imageUrls: Array.isArray(body.imageUrls) ? body.imageUrls.map(cleanString).filter(Boolean) : undefined,
+    n: optionalInteger(body.n),
     size: cleanString(body.size),
+    resolution: cleanString(body.resolution),
+    aspectRatio: cleanString(body.aspectRatio),
     quality: cleanString(body.quality),
     responseFormat: cleanString(body.responseFormat),
     inputFidelity: cleanString(body.inputFidelity),
@@ -738,18 +694,31 @@ function compactStoredJob(job) {
 }
 
 function compactLargeResponse(value) {
+  return compactLargeResponseValue(value);
+}
+
+function compactLargeResponseValue(value, parentKey = "") {
   if (!value || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map(compactLargeResponse);
+  if (Array.isArray(value)) return value.map((item) => compactLargeResponseValue(item, parentKey));
 
   const result = {};
   for (const [key, item] of Object.entries(value)) {
-    if (key === "b64_json" && typeof item === "string") {
+    const isGeminiInlineData = key === "data" && ["inlineData", "inline_data"].includes(parentKey);
+    if ((key === "b64_json" || isGeminiInlineData) && typeof item === "string") {
       result[key] = "[omitted]";
     } else {
-      result[key] = compactLargeResponse(item);
+      result[key] = compactLargeResponseValue(item, key);
     }
   }
   return result;
+}
+
+function ensureSavedImageResult(artifacts, response, noDownload) {
+  if (artifacts.downloadedFiles.length) return;
+  if (noDownload && artifacts.imageUrls.length) return;
+  const finishReason = response?.candidates?.[0]?.finishReason;
+  const suffix = finishReason ? ` Finish reason: ${finishReason}.` : "";
+  throw new Error(`APINebula returned no usable image artifact.${suffix}`);
 }
 
 function pruneJobs() {
@@ -760,13 +729,23 @@ function pruneJobs() {
 }
 
 export function publicArtifacts(artifacts, outputDir) {
+  const inspectionByPath = new Map((artifacts.inspections || []).map((item) => [path.resolve(item.filePath), item]));
   return {
     metadataPath: artifacts.metadataPath,
     imageUrls: artifacts.imageUrls,
-    downloadedFiles: artifacts.downloadedFiles.map((filePath) => ({
-      path: filePath,
-      url: fileUrl(filePath, outputDir),
-    })),
+    downloadedFiles: artifacts.downloadedFiles.map((filePath) => {
+      const inspection = inspectionByPath.get(path.resolve(filePath));
+      return {
+        path: filePath,
+        url: fileUrl(filePath, outputDir),
+        ...(inspection ? {
+          mimeType: inspection.mimeType,
+          width: inspection.width,
+          height: inspection.height,
+          bytes: inspection.bytes,
+        } : {}),
+      };
+    }),
   };
 }
 
@@ -996,6 +975,15 @@ function cleanString(value) {
   return typeof value === "string" ? value.trim() : undefined;
 }
 
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 function validatedBaseUrl(value) {
   const cleaned = cleanString(value);
   if (!cleaned) return undefined;
@@ -1067,8 +1055,4 @@ function httpStatusForError(error) {
   if (Number.isInteger(error?.statusCode)) return error.statusCode;
   if (/too large/i.test(error?.message || "")) return 413;
   return 500;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

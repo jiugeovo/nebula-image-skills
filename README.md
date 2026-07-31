@@ -1,342 +1,341 @@
 # NebulaCanvas
 
-NebulaCanvas 是一个给 Codex 使用的 APINebula 异步生图工具包。它把“提交图片任务、轮询结果、下载图片、保存元数据”封装成 CLI / MCP 工具，再配套一个轻量 Codex Skill。
+NebulaCanvas 是一个本地 APINebula 图像工作台，提供三种使用入口：
 
-## 功能
+- PC 浏览器可视化页面：生图、本地改图、URL 改图、批量任务和结果预览。
+- CLI：适合脚本、PowerShell 和自动化生成。
+- MCP Server：让 Codex 等 MCP 客户端直接调用生图与改图工具。
 
-- CLI：本地命令行调用 APINebula 异步生图接口。
-- Web：本地启动可视化界面，在浏览器里填写参数、提交任务和查看结果。
-- REST API：Codex 或其他本地脚本可以直接连接本地服务调用。
-- MCP：让 Codex 通过工具调用 NebulaCanvas。
-- Skill：让 Codex 知道不同模型应该使用哪个预设和分组。
-- `.env` 默认模型：可在配置文件里指定默认模型，命令行传入的 `--model` 优先级更高。
+项目不包含手机端适配，也不提供 Electron、Tauri 等独立桌面客户端。Web 页面由本地 Node.js 服务提供，默认只监听 `127.0.0.1`。
 
-当前支持：
+## 支持的模型分组
 
-- `adobe-gpt-image-2`
-- `adobe-nano-banana`
-- `adobe-nano-banana-pro`
-- `adobe-nano-banana-2`
-- `gpt-image-2`
+| 预设 | APINebula 分组 | 默认模型 | 协议 |
+| --- | --- | --- | --- |
+| `image2` | `gpt-image-2-1k` | `gpt-image-2` | Images API |
+| `image2_4k` | `image2-4k` | `gpt-image-2-4k` | Images API |
+| `nanobanana` | `nanobanana` | `gemini-3.1-flash-image` | Gemini `generateContent` |
+| `grok` | `Grok` | `grok-imagine-image` | Chat Completions |
 
-项目不会把真实 API Key 写入代码。请使用本地 `.env` 或 MCP 配置传入。
+参数和分组以 [APINebula 图片文档](https://docs.apinebula.ai/docs/advanced/image) 为依据。Adobe 分组不在当前项目中。
+
+## 环境与依赖
+
+### 必需环境
+
+- Windows、macOS 或 Linux。
+- Node.js 20 或更高版本。
+- npm 10 或兼容版本。
+- 与所选模型分组匹配的 APINebula API Key。
+
+不需要 Python、数据库、Docker、全局前端构建工具或原生图像处理库。
+
+### 项目直接依赖
+
+依赖已经写入 `package.json` 和 `package-lock.json`，执行 `npm ci` 即可完整安装，不要逐个手动安装。
+
+| 依赖 | 用途 |
+| --- | --- |
+| `@modelcontextprotocol/sdk` | MCP Server 与 stdio transport |
+| `zod` | MCP 工具参数校验 |
+| `busboy` | Web 本地改图的 multipart 文件上传 |
+| `form-data` | 向上游 Images Edit API 提交参考图 |
+| `dotenv` | 加载本地 `.env` 配置 |
+| `lucide` | Web 页面本地图标资源 |
 
 ## 安装
-
-需要 Node.js 20 或更高版本。
-
-从 GitHub 克隆：
 
 ```powershell
 git clone https://github.com/jiugeovo/nebula-canvas.git
 cd nebula-canvas
-npm install
+npm ci
+Copy-Item .env.example .env
 ```
 
-如果是下载 zip，请先解压，然后进入解压后的 `nebula-canvas` 目录：
+开发时如果修改了依赖，使用：
 
 ```powershell
-cd path\to\nebula-canvas
 npm install
 ```
 
-如果 npm 全局缓存目录权限异常，可以使用本项目内缓存：
+如果 npm 全局缓存没有写入权限：
 
 ```powershell
 npm install --cache .\.npm-cache
 ```
 
-复制配置文件：
+可选：把三个命令链接到本机 npm 命令目录：
 
 ```powershell
-Copy-Item .env.example .env
+npm link
+nebula-canvas --help
+nebula-canvas-web --help
 ```
 
-编辑 `.env`：
+`npm link` 后可直接使用：
+
+- `nebula-canvas`：CLI。
+- `nebula-canvas-web`：Web 服务。
+- `nebula-canvas-mcp`：MCP Server。
+
+## 配置
+
+`.env` 示例：
 
 ```env
-APINEBULA_API_KEY=你的_APINebula_令牌
-APINEBULA_BASE_URL=https://apinebula.com
+APINEBULA_API_KEY=your_api_key_here
+APINEBULA_BASE_URL=https://img-api.apinebula.ai
 
-NEBULA_CANVAS_ADOBE_MODEL=adobe-gpt-image-2
-NEBULA_CANVAS_BANANA_MODEL=adobe-nano-banana-pro
 NEBULA_CANVAS_IMAGE2_MODEL=gpt-image-2
+NEBULA_CANVAS_IMAGE2_4K_MODEL=gpt-image-2-4k
+NEBULA_CANVAS_NANOBANANA_MODEL=gemini-3.1-flash-image
+NEBULA_CANVAS_GROK_MODEL=grok-imagine-image
 
 NEBULA_CANVAS_OUTPUT_DIR=./outputs
-NEBULA_CANVAS_POLL_INTERVAL_MS=5000
-NEBULA_CANVAS_TIMEOUT_MS=600000
+NEBULA_CANVAS_TIMEOUT_MS=1800000
+NEBULA_CANVAS_WEB_HOST=127.0.0.1
+NEBULA_CANVAS_WEB_PORT=8787
 ```
 
-模型选择优先级：
+注意：
 
-```text
-命令行 --model > .env 默认模型 > NebulaCanvas 内置默认模型
-```
+- `APINEBULA_BASE_URL` 必须填写根地址，不要追加 `/v1`。
+- `.env` 已被 Git 忽略，不要把真实 Key 写入源码、README 或提交记录。
+- Web 页面可以直接设置 Base URL 和 Key，因此只使用 Web 时可以不在 `.env` 中填写 Key。
+- CLI 和 MCP 建议使用 `.env` 或 MCP 客户端的 `env` 配置。
 
-## CLI 使用
+## Web 可视化页面
 
-查看预设：
-
-```powershell
-node bin\nebula-canvas.js models
-```
-
-调用 Adobe GPT Image 2：
-
-```powershell
-node bin\nebula-canvas.js image generate `
-  --preset adobe `
-  --prompt "一张电影感雨夜未来城市街景，霓虹反射，真实摄影质感" `
-  --size 1024x1024 `
-  --resolution 1K `
-  --aspect-ratio 1:1
-```
-
-调用 Nano Banana。默认会读取 `.env` 中的 `NEBULA_CANVAS_BANANA_MODEL`：
-
-```powershell
-node bin\nebula-canvas.js image generate `
-  --preset banana `
-  --prompt "一张高级感产品海报，浅灰背景，柔和布光，干净构图，无水印" `
-  --size 1024x1024
-```
-
-临时指定 Banana 模型：
-
-```powershell
-node bin\nebula-canvas.js image generate `
-  --preset banana `
-  --model adobe-nano-banana-2 `
-  --prompt "一张高级感产品海报，浅灰背景，柔和布光，干净构图，无水印" `
-  --size 1024x1024
-```
-
-调用 Image2：
-
-```powershell
-node bin\nebula-canvas.js image generate `
-  --preset image2 `
-  --prompt "一张简洁的商业产品图，浅灰背景，真实摄影质感，无水印" `
-  --size 1024x1024
-```
-
-生成完成后，图片和任务元数据会保存到 `outputs/`。命令会输出：
-
-- `taskId`
-- 任务状态
-- 图片 URL
-- 下载后的本地文件路径
-- 元数据 JSON 路径
-
-## Web 可视化界面
-
-启动本地服务：
+### 启动
 
 ```powershell
 npm run web
 ```
 
-默认地址：
-
-```text
-http://127.0.0.1:8787
-```
-
-打开后可以在网页里选择模式：
-
-- 生图：提交单张或批量异步生图任务。批量模式支持 2–12 张、1–4 个并发任务。
-- 同步改图：上传本地参考图，调用 `POST /v1/images/edits`，默认使用 `response_format=url` 以降低本地内存占用。
-- 异步改图：填写公网参考图 URL，调用 `POST /v1/image-tasks/edits`。
-
-### 网页连接设置
-
-点击页面右上角的服务状态，可以直接设置：
-
-- `API Base URL`：APINebula 或兼容服务的根地址，例如 `https://apinebula.com`。
-- `API Key`：用于当前网页标签页提交的临时令牌。
-
-网页设置优先于服务端 `.env`，会自动用于单张生成、批量生成、同步改图和异步改图。Base URL 作为浏览器偏好保存在本地；API Key 只保存在当前标签页的 `sessionStorage`，关闭标签页后自动清除，不会写入 `.env`、任务 JSON 或批次 `manifest.json`。点击“恢复服务端配置”可以重新使用 `.env`。
-
-批量任务会作为一条记录显示在任务队列中，页面会展示整体进度、成功/失败数量和每张图片的状态。结果默认保存到：
-
-```text
-outputs/batches/<时间戳>-<批次ID>/
-├─ 001.png
-├─ 001.json
-├─ 002.png
-├─ 002.json
-└─ manifest.json
-```
-
-`manifest.json` 会在批次处理过程中持续更新，包含子任务 ID、状态、错误和本地输出路径。
-
-下载后的图片和任务元数据仍然保存在 `NEBULA_CANVAS_OUTPUT_DIR` 指定的目录中。页面里的“临时 API Key”只用于本次本地任务，不会写入 `.env`，也不会在任务 JSON 中回显。
-
-本地服务会自动压缩任务历史中的大字段：同步改图默认返回图片 URL，上传参考图和下载结果图都会尽量使用流式处理；如果手动指定返回 `b64_json`，保存图片后也会把内存中的任务记录替换为 `[omitted]`。任务历史默认只保留最近 20 条，避免长时间运行后占用过多内存。
-
-如果需要指定端口：
+打开 [http://127.0.0.1:8787](http://127.0.0.1:8787)。也可以直接从 PowerShell 打开：
 
 ```powershell
-node bin\nebula-canvas-web.js --port 8790
+Start-Process http://127.0.0.1:8787
 ```
 
-## REST API
-
-本地 Web 服务同时提供 REST API，方便 Codex 或其他工具直接调用。
-
-查看服务状态：
+指定监听地址或端口：
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8787/api/health
+node bin\nebula-canvas-web.js --host 127.0.0.1 --port 8788
 ```
 
-提交生成任务：
+安装过 `npm link` 时也可以使用：
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8787/api/jobs `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "preset": "banana",
-    "prompt": "一张高级感产品海报，浅灰背景，柔和布光，干净构图，无水印",
-    "size": "1024x1024"
-  }'
+nebula-canvas-web --port 8788
 ```
 
-查询任务：
+### 首次出图
+
+1. 点击页面右上角的连接状态，填写 API Base URL 和 API Key。
+2. 选择模型分组和具体模型。
+3. 选择“生成”“本地改图”或“URL 改图”。
+4. 填写提示词和该模型支持的输出参数。
+5. 点击“生成图像”，在中间结果区查看进度、图片和真实像素。
+
+连接设置的保存范围：
+
+- Base URL 保存在浏览器 `localStorage`。
+- API Key 只保存在当前标签页 `sessionStorage`，关闭标签页后清除。
+- Key 不会写入 `.env`、任务记录、输出元数据或批次清单。
+
+Web 页面按 PC 浏览器工作台设计，建议浏览器窗口宽度至少 `1180px`。
+
+### 三种模式
+
+- 生成：支持单张和批量任务；批量为多次独立请求，数量 2-12，并发 1-4。
+- 本地改图：上传 PNG、JPEG 或 WebP，单次最多 8 张参考图。
+- URL 改图：每行填写一个公网 HTTP(S) 图片地址，单次最多 8 个地址。
+
+Image 2 4K 的 Web 批量上限为 10。Web 中的“数量”表示独立请求数，不是单次上游请求的 `n` 参数。
+
+## CLI
+
+CLI 当前提供生图；改图请使用 Web 或 MCP。
+
+查看帮助和模型注册表：
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8787/api/jobs/<job_id>
+npm run cli -- --help
+npm run cli -- models
 ```
 
-查看所有任务：
+### Image 2 1K
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8787/api/jobs
+npm run cli -- image generate `
+  --preset image2 `
+  --prompt "雨后的未来城市街道，电影感灯光，无文字和水印" `
+  --size 1024x1024 `
+  --quality high
 ```
 
-提交批量生成任务：
+### Image 2 4K
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8787/api/batches `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "preset": "image2",
-    "prompt": "一张简洁的商业产品图，浅灰背景，真实摄影质感，无水印",
-    "size": "1024x1024",
-    "count": 6,
-    "concurrency": 2
-  }'
+npm run cli -- image generate `
+  --preset image2_4k `
+  --prompt "开阔山谷日出，动漫背景美术，16:9，无文字和水印" `
+  --size 3840x2160 `
+  --quality high `
+  --timeout-ms 1800000
 ```
 
-批量限制为 `count: 2–12`、`concurrency: 1–4`，且并发数不能超过生成数量。
+单次 Image 2 4K 请求需要多张结果时，可以增加 `--n 1` 到 `--n 10`。
 
-同步改图需要上传本地图片，适合在浏览器画布里操作；异步改图使用公网图片 URL，也可以直接调用 REST API：
+### Nano Banana
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8787/api/edit-jobs `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body '{
-    "model": "gpt-image-2",
-    "prompt": "保留主体构图，将画面调整为清晨暖光电影风，不要文字和水印",
-    "imageUrls": ["https://example.com/input.png"],
-    "size": "1024x1536",
-    "quality": "high"
-  }'
+npm run cli -- image generate `
+  --preset nanobanana `
+  --prompt "漂浮在云海上的天文岛，无文字和水印" `
+  --resolution 2K `
+  --aspect-ratio 16:9
 ```
 
-## 分组说明
-
-创建 APINebula 令牌时，请选择对应分组：
-
-| 模型 | 令牌分组 |
-| --- | --- |
-| `adobe-gpt-image-2` | `adobe` |
-| `adobe-nano-banana` | `adobe` |
-| `adobe-nano-banana-pro` | `adobe` |
-| `adobe-nano-banana-2` | `adobe` |
-| `gpt-image-2` | `image-2-1k` |
-
-如果令牌分组不匹配，后端可能返回“当前分组下模型无可用渠道”。
-
-## 在 Codex 中使用 Skill
-
-把 Skill 复制到 Codex 的 skills 目录：
+### Grok Imagine
 
 ```powershell
-Copy-Item -Recurse .\skills\nebula-canvas "$env:USERPROFILE\.codex\skills\"
+npm run cli -- image generate `
+  --preset grok `
+  --prompt "写实海岸公路，宽幅 16:9，无人物、文字和水印"
 ```
 
-重启 Codex 后，可以这样说：
+Grok 的比例写在提示词中，不要传 `--size`、`--resolution`、`--aspect-ratio`、`--quality` 或 `--n`。
 
-```text
-用 $nebula-canvas 生成一张电影感未来城市图，使用 adobe 预设。
-```
+安装过 `npm link` 后，把示例中的 `npm run cli --` 替换成 `nebula-canvas` 即可。
 
-或：
+## MCP Server
 
-```text
-用 $nebula-canvas 生成一张高级感香水产品海报，使用 banana 预设。
-```
+MCP 使用 stdio，不需要额外开放端口。项目内配置示例位于 `examples/mcp-config.json`。
 
-也可以让 Codex 通过 MCP 改图：
-
-```text
-用 $nebula-canvas 把这张本地图片改成红金古风灯笼氛围，使用 gpt-image-2。
-```
-
-Skill 负责告诉 Codex 如何选择模型和参数，真正请求接口的是 NebulaCanvas CLI / MCP。
-
-## MCP 使用
-
-启动 MCP server：
-
-```powershell
-npm run mcp
-```
-
-Codex MCP 配置示例：
+从源码运行的 MCP 客户端配置：
 
 ```json
 {
   "mcpServers": {
     "nebula-canvas": {
       "command": "node",
-      "args": ["E:/path/to/nebula-canvas/bin/nebula-canvas-mcp.js"],
+      "args": ["E:/codex/tianwen/bin/nebula-canvas-mcp.js"],
       "env": {
-        "APINEBULA_API_KEY": "你的_APINebula_令牌",
-        "APINEBULA_BASE_URL": "https://apinebula.com",
-        "NEBULA_CANVAS_BANANA_MODEL": "adobe-nano-banana-pro",
-        "NEBULA_CANVAS_OUTPUT_DIR": "E:/path/to/nebula-canvas/outputs"
+        "APINEBULA_API_KEY": "your_api_key_here",
+        "APINEBULA_BASE_URL": "https://img-api.apinebula.ai",
+        "NEBULA_CANVAS_OUTPUT_DIR": "E:/codex/tianwen/outputs",
+        "NEBULA_CANVAS_TIMEOUT_MS": "1800000"
       }
     }
   }
 }
 ```
 
-MCP 暴露四个工具：
+复制到其他目录后，需要把 `args` 和输出目录改成实际绝对路径。安装过 `npm link` 的客户端也可以把命令改为 `nebula-canvas-mcp`。
 
-- `nebula_canvas_generate_image`
-- `nebula_canvas_get_task`
-- `nebula_canvas_edit_image`（同步改图默认返回 URL）
-- `nebula_canvas_edit_image_async`
+当前 MCP 工具：
 
-## 本地验证
+| 工具 | 用途 |
+| --- | --- |
+| `nebula_canvas_generate_image` | 文本生图 |
+| `nebula_canvas_edit_image` | 使用本地参考图改图 |
+| `nebula_canvas_edit_image_async` | 使用公网 URL 参考图改图；工具名为兼容保留 |
+| `nebula_canvas_get_task` | 查询旧异步图片任务 |
+
+常用参数包括 `preset`、`model`、`prompt`、`size`、`resolution`、`aspectRatio`、`quality`、`n`、`outputDir` 和 `timeoutMs`。只传所选模型分组支持的参数。
+
+## Codex Skill（可选）
+
+项目自带 `skills/nebula-canvas`。安装到当前 Windows 用户：
+
+```powershell
+$skillRoot = Join-Path $env:USERPROFILE ".codex\skills"
+New-Item -ItemType Directory -Force $skillRoot | Out-Null
+Copy-Item -Recurse -Force .\skills\nebula-canvas $skillRoot
+```
+
+重启 Codex 后即可使用 `$nebula-canvas`。Skill 负责说明模型路由和参数规则，实际执行仍通过 MCP、CLI、REST 或 Web。
+
+## 输出文件
+
+默认输出目录为 `outputs/`。
+
+普通任务：
+
+```text
+outputs/
+├─ <timestamp>-<model>.json
+└─ <timestamp>-<model>-1.png
+```
+
+Web 批量任务：
+
+```text
+outputs/batches/<timestamp>-<batch-id>/
+├─ 001.json
+├─ 001.png
+├─ 002.json
+├─ 002.png
+└─ manifest.json
+```
+
+NebulaCanvas 会检查下载图片的签名、MIME、字节数和真实宽高。请求中的尺寸只是上游参数，最终结果请以页面或 `inspections` 中的实际像素为准。
+
+## 参数速查
+
+| 预设 | 输出参数 | 重要限制 |
+| --- | --- | --- |
+| `image2` | `size=1024x1024`、`quality=auto|low|medium|high` | 单次 `n=1`，不提供 2K/4K |
+| `image2_4k` | `size=3840x2160`、质量、`n=1..10` | 固定 4K，建议 30 分钟超时 |
+| `nanobanana` | `resolution=1K|2K|4K`、`aspectRatio` | Gemini 2.5 Flash 仅支持 1K |
+| `grok` | 比例写入提示词 | 当前 1K，不接受其他输出参数 |
+
+## 项目命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `npm run web` 或 `npm start` | 启动可视化页面和本地 REST API |
+| `npm run cli -- --help` | 查看 CLI 帮助 |
+| `npm run cli -- models` | 查看模型能力注册表 |
+| `npm run mcp` | 启动 stdio MCP Server |
+| `npm run check` | 运行 Mock 上游与 Web/协议自动检查 |
+
+## 验证安装
 
 ```powershell
 npm run check
-node bin\nebula-canvas.js models
+node --check src\apinebula.js
+node --check src\models.js
+node --check src\cli.js
+node --check src\web-server.js
+node --check public\app.js
+node --check bin\nebula-canvas-mcp.js
+node --check bin\nebula-canvas-web.js
+npm pack --dry-run
 ```
 
-真实请求烟测：
+`npm run check` 使用本地 Mock API，不会发送真实 APINebula 请求，也不会消耗图片额度。
 
-```powershell
-node bin\nebula-canvas.js image generate `
-  --preset adobe `
-  --prompt "一张简洁测试图，白色桌面上放着写有 NebulaCanvas 字样的小卡片，柔和自然光" `
-  --size 1024x1024 `
-  --resolution 1K `
-  --aspect-ratio 1:1
-```
+## 常见问题
+
+### 页面提示“需要 API Key”
+
+点击右上角连接状态，在网页中填写 Key；或者在 `.env` 中设置 `APINEBULA_API_KEY` 后重启服务。
+
+### Base URL 应该怎么填
+
+填写 `https://img-api.apinebula.ai` 这样的根地址，不要填写 `/v1/images/generations`，也不要追加 `/v1`。
+
+### CLI 能否改图
+
+当前不能。请使用 Web 的本地改图、URL 改图，或 MCP 的两个改图工具。
+
+### 为什么请求尺寸和下载图片尺寸不同
+
+上游可能返回与请求元数据不同的真实像素。NebulaCanvas 会在保存后读取图片文件并展示实际宽高。
+
+### 任务历史为什么重启后消失
+
+Web 任务列表保存在当前 Node.js 进程内存中；重启后列表会清空，但 `outputs/` 中的图片、JSON 和批次 `manifest.json` 仍然存在。

@@ -33,9 +33,10 @@ const STATUS_META = {
   cancelled: { label: "已取消", tone: "neutral" },
 };
 const PRESET_LABELS = {
-  adobe: "Adobe",
-  banana: "Banana",
-  image2: "Image 2",
+  image2: "Image 2 · 1K",
+  image2_4k: "Image 2 · 4K",
+  nanobanana: "Nano Banana",
+  grok: "Grok Imagine",
 };
 const STORAGE_KEYS = {
   baseUrl: "nebula-canvas.base-url",
@@ -65,6 +66,16 @@ const elements = {
   resolutionSelect: document.querySelector("#resolutionSelect"),
   aspectRatioInput: document.querySelector("#aspectRatioInput"),
   qualitySelect: document.querySelector("#qualitySelect"),
+  sizeField: document.querySelector("#sizeField"),
+  qualityField: document.querySelector("#qualityField"),
+  resolutionField: document.querySelector("#resolutionField"),
+  aspectRatioField: document.querySelector("#aspectRatioField"),
+  inputFidelityField: document.querySelector("#inputFidelityField"),
+  primaryParameterGrid: document.querySelector("#primaryParameterGrid"),
+  secondaryParameterGrid: document.querySelector("#secondaryParameterGrid"),
+  modelCapabilityNote: document.querySelector("#modelCapabilityNote"),
+  noDownloadField: document.querySelector("#noDownloadField"),
+  parametersSection: document.querySelector("#parametersSection"),
   outputDirInput: document.querySelector("#outputDirInput"),
   imageInput: document.querySelector("#imageInput"),
   imageUrlsInput: document.querySelector("#imageUrlsInput"),
@@ -112,7 +123,7 @@ function wireEvents() {
   );
   elements.reusePrompt.addEventListener("click", reuseActiveJob);
   elements.presetSelect.addEventListener("change", syncPresetDefaults);
-  elements.modelSelect.addEventListener("change", updateSubmitMeta);
+  elements.modelSelect.addEventListener("change", syncModelCapabilities);
   elements.imageInput.addEventListener("change", () => setImageFiles(elements.imageInput.files));
   elements.imageUrlsInput.addEventListener("input", updateUrlCount);
   elements.promptInput.addEventListener("input", updatePromptCount);
@@ -201,7 +212,7 @@ async function loadPresets() {
   state.presets = data.presets || [];
   elements.presetSelect.replaceChildren();
   for (const preset of state.presets) {
-    elements.presetSelect.append(new Option(PRESET_LABELS[preset.name] || preset.name, preset.name));
+    elements.presetSelect.append(new Option(preset.label || PRESET_LABELS[preset.name] || preset.name, preset.name));
   }
   if (state.presets.some((preset) => preset.name === selected)) elements.presetSelect.value = selected;
   syncPresetDefaults();
@@ -253,17 +264,6 @@ function toggleModeNodes(selector, hidden) {
 }
 
 function syncPresetDefaults() {
-  if (state.mode !== "generate") {
-    replaceSelectOptions(elements.modelSelect, ["gpt-image-2"], "gpt-image-2");
-    elements.sizeInput.value = "1024x1536";
-    elements.qualitySelect.value = "high";
-    elements.resolutionSelect.value = "";
-    elements.aspectRatioInput.value = "";
-    setModelGroup("image-2-1k");
-    updateSubmitMeta();
-    return;
-  }
-
   const preset = state.presets.find((item) => item.name === elements.presetSelect.value);
   if (!preset) {
     updateSubmitMeta();
@@ -272,12 +272,78 @@ function syncPresetDefaults() {
 
   const models = [...new Set([preset.defaults?.model, ...(preset.models || [])].filter(Boolean))];
   replaceSelectOptions(elements.modelSelect, models, preset.defaults?.model);
-  elements.sizeInput.value = preset.defaults?.size || "";
-  elements.qualitySelect.value = preset.defaults?.quality || "";
-  elements.resolutionSelect.value = preset.defaults?.resolution || "";
-  elements.aspectRatioInput.value = preset.defaults?.aspectRatio || "";
+  syncControl(elements.sizeField, elements.sizeInput, preset, "size", preset.defaults?.size);
+  syncControl(elements.qualityField, elements.qualitySelect, preset, "quality", preset.defaults?.quality, {
+    labels: { auto: "自动", low: "低", medium: "中", high: "高" },
+  });
+  syncControl(elements.resolutionField, elements.resolutionSelect, preset, "resolution", preset.defaults?.resolution);
+  syncControl(elements.aspectRatioField, elements.aspectRatioInput, preset, "aspectRatio", preset.defaults?.aspectRatio);
+  syncControl(elements.inputFidelityField, elements.inputFidelitySelect, preset, "inputFidelity", preset.defaults?.inputFidelity, {
+    labels: { high: "高" },
+  });
+  updateParameterGrids();
   setModelGroup(preset.group || "未指定");
+  syncModelCapabilities();
+}
+
+function syncModelCapabilities() {
+  const preset = getSelectedPreset();
+  if (!preset) return;
+  const modelRules = preset.capabilities?.modelCapabilities?.[elements.modelSelect.value];
+  if (modelRules?.resolutions) {
+    const current = elements.resolutionSelect.value;
+    replaceSelectOptions(elements.resolutionSelect, modelRules.resolutions, modelRules.resolutions.includes(current) ? current : modelRules.resolutions[0]);
+  } else {
+    const control = preset.capabilities?.controls?.resolution;
+    if (isControlVisible(control)) {
+      const current = elements.resolutionSelect.value || preset.defaults?.resolution;
+      replaceSelectOptions(elements.resolutionSelect, control.options || [], current);
+    }
+  }
+  const resolutionNote = modelRules?.resolutions?.length === 1 ? `当前模型固定 ${modelRules.resolutions[0]}。` : "";
+  elements.modelCapabilityNote.textContent = [preset.capabilities?.note, resolutionNote].filter(Boolean).join(" ");
+  const noDownload = elements.form.elements.noDownload;
+  const hasRemoteUrl = preset.transport !== "gemini";
+  elements.noDownloadField.hidden = !hasRemoteUrl;
+  noDownload.disabled = !hasRemoteUrl;
+  if (!hasRemoteUrl) noDownload.checked = false;
+  updateBatchControls();
   updateSubmitMeta();
+}
+
+function syncControl(field, select, preset, controlName, selected, { labels = {} } = {}) {
+  const control = preset.capabilities?.controls?.[controlName];
+  const visible = isControlVisible(control);
+  field.hidden = !visible;
+  select.disabled = !visible;
+  if (!visible) {
+    select.replaceChildren();
+    return;
+  }
+  const options = control.optionsByMode?.[state.mode] || control.options || [];
+  select.replaceChildren(...options.map((value) => new Option(labels[value] || value, value)));
+  select.value = options.includes(selected) ? selected : options[0] || "";
+  select.disabled = Boolean(control.fixed);
+}
+
+function isControlVisible(control) {
+  return Boolean(control?.modes?.includes(state.mode));
+}
+
+function updateParameterGrids() {
+  elements.primaryParameterGrid.hidden = elements.sizeField.hidden && elements.qualityField.hidden;
+  elements.secondaryParameterGrid.hidden = elements.resolutionField.hidden && elements.aspectRatioField.hidden;
+  elements.parametersSection.hidden = elements.primaryParameterGrid.hidden
+    && elements.secondaryParameterGrid.hidden
+    && elements.inputFidelityField.hidden;
+  for (const grid of [elements.primaryParameterGrid, elements.secondaryParameterGrid]) {
+    const visibleFields = [...grid.querySelectorAll(":scope > .field")].filter((field) => !field.hidden);
+    grid.classList.toggle("single-column", visibleFields.length === 1);
+  }
+}
+
+function getSelectedPreset() {
+  return state.presets.find((item) => item.name === elements.presetSelect.value);
 }
 
 function setModelGroup(group) {
@@ -355,14 +421,18 @@ async function submitGeneration() {
 
 async function submitEdit() {
   const data = Object.fromEntries(new FormData(elements.form).entries());
+  const responseFormat = getSelectedPreset()?.transport === "images" ? "url" : undefined;
   if (state.mode === "edit-sync") {
     const body = new FormData();
-    body.append("model", data.model || "gpt-image-2");
+    body.append("preset", data.preset);
+    body.append("model", data.model);
     body.append("prompt", data.prompt);
-    body.append("size", data.size || "1024x1536");
-    body.append("quality", data.quality || "high");
-    body.append("responseFormat", "url");
-    body.append("inputFidelity", data.inputFidelity || "high");
+    if (data.size) body.append("size", data.size);
+    if (data.resolution) body.append("resolution", data.resolution);
+    if (data.aspectRatio) body.append("aspectRatio", data.aspectRatio);
+    if (data.quality) body.append("quality", data.quality);
+    if (responseFormat) body.append("responseFormat", responseFormat);
+    if (data.inputFidelity) body.append("inputFidelity", data.inputFidelity);
     if (data.outputDir) body.append("outputDir", data.outputDir);
     body.append("noDownload", elements.form.elements.noDownload.checked ? "true" : "false");
     for (const file of elements.imageInput.files) body.append("image", file);
@@ -373,12 +443,16 @@ async function submitEdit() {
     method: "POST",
     body: JSON.stringify(
       cleanPayload({
-        model: data.model || "gpt-image-2",
+        preset: data.preset,
+        model: data.model,
         prompt: data.prompt,
         imageUrls: parseImageUrls(),
-        size: data.size || "1024x1536",
-        quality: data.quality || "high",
-        responseFormat: "b64_json",
+        size: data.size,
+        resolution: data.resolution,
+        aspectRatio: data.aspectRatio,
+        quality: data.quality,
+        inputFidelity: data.inputFidelity,
+        responseFormat,
         outputDir: data.outputDir,
         noDownload: elements.form.elements.noDownload.checked,
       }),
@@ -432,8 +506,8 @@ function renderActiveJob(job) {
     elements.activeJob.innerHTML = `
       <div class="empty-state">
         <span class="empty-icon" aria-hidden="true"><i data-lucide="images"></i></span>
-        <h3>画布已就绪</h3>
-        <p>新任务会显示在这里</p>
+        <h3>等待图像任务</h3>
+        <p>生成结果会显示在这里</p>
       </div>
     `;
     refreshIcons();
@@ -596,7 +670,10 @@ function renderImages(items) {
             <figure class="result-image">
               <img src="${escapeAttr(item.src)}" alt="生成结果 ${index + 1}" loading="eager" />
               <figcaption>
-                <span>结果 ${index + 1}</span>
+                <span class="image-caption-copy">
+                  <strong>结果 ${index + 1}</strong>
+                  ${item.width && item.height ? `<small>${escapeHtml(`${item.width}×${item.height} · ${shortImageFormat(item.mimeType)}`)}</small>` : ""}
+                </span>
                 <span class="image-actions">
                   ${item.path ? `<button type="button" data-copy-value="${escapeAttr(item.path)}" title="复制本地路径" aria-label="复制本地路径"><i data-lucide="copy"></i></button>` : ""}
                   <a href="${escapeAttr(item.href)}" target="_blank" rel="noopener noreferrer" title="打开原图" aria-label="打开原图"><i data-lucide="external-link"></i></a>
@@ -649,7 +726,14 @@ function renderPathRow(label, value) {
 function getImageItems(job) {
   const localFiles = (job.artifacts?.downloadedFiles || [])
     .filter((file) => safeImageUrl(file.url))
-    .map((file) => ({ src: safeImageUrl(file.url), href: safeImageUrl(file.url), path: file.path }));
+    .map((file) => ({
+      src: safeImageUrl(file.url),
+      href: safeImageUrl(file.url),
+      path: file.path,
+      width: file.width,
+      height: file.height,
+      mimeType: file.mimeType,
+    }));
   if (localFiles.length) return localFiles;
   return [...new Set(job.artifacts?.imageUrls || [])]
     .map((url) => safeImageUrl(url))
@@ -684,12 +768,13 @@ function reuseActiveJob() {
     syncPresetDefaults();
   }
   if (request.model) ensureSelectValue(elements.modelSelect, request.model);
+  syncModelCapabilities();
   elements.promptInput.value = request.prompt || "";
   elements.sizeInput.value = request.size || elements.sizeInput.value;
   elements.qualitySelect.value = request.quality || "";
   elements.resolutionSelect.value = request.resolution || "";
   elements.aspectRatioInput.value = request.aspectRatio || "";
-  elements.inputFidelitySelect.value = request.inputFidelity || "high";
+  elements.inputFidelitySelect.value = request.inputFidelity || elements.inputFidelitySelect.value;
   elements.outputDirInput.value = request.outputDir || "";
   elements.form.elements.noDownload.checked = Boolean(request.noDownload);
   elements.batchCountInput.value = request.count || 1;
@@ -801,14 +886,21 @@ function updateUrlCount() {
 
 function updateSubmitMeta() {
   const selection = elements.modelSelect.value
-    || (state.mode === "generate" ? PRESET_LABELS[elements.presetSelect.value] || "图像生成" : "gpt-image-2");
-  const size = elements.sizeInput.value || "默认尺寸";
+    || PRESET_LABELS[elements.presetSelect.value]
+    || "图像任务";
+  const preset = getSelectedPreset();
+  const output = elements.sizeInput.value
+    || [elements.resolutionSelect.value, elements.aspectRatioInput.value].filter(Boolean).join(" · ")
+    || (preset?.transport === "chat" ? "1K · 比例写入提示词" : "模型默认");
   const count = state.mode === "generate" ? getBatchCount() : 1;
   const batchMeta = count > 1 ? ` · ${count} 张 · 并发 ${elements.concurrencySelect.value}` : "";
-  elements.submitMeta.textContent = `${selection} · ${size}${batchMeta}`;
+  elements.submitMeta.textContent = `${selection} · ${output}${batchMeta}`;
 }
 
 function updateBatchControls() {
+  const limit = getBatchLimit();
+  elements.batchCountInput.max = String(limit);
+  if (Number(elements.batchCountInput.value) > limit) elements.batchCountInput.value = String(limit);
   const count = getBatchCount();
   const maxConcurrency = Math.min(4, count);
   elements.concurrencySelect.replaceChildren(
@@ -840,17 +932,21 @@ function normalizeBatchCount() {
 }
 
 function stepBatchCount(delta) {
-  elements.batchCountInput.value = String(Math.min(12, Math.max(1, getBatchCount() + delta)));
+  elements.batchCountInput.value = String(Math.min(getBatchLimit(), Math.max(1, getBatchCount() + delta)));
   updateBatchControls();
 }
 
 function getBatchCount() {
   const value = Number(elements.batchCountInput.value);
-  return Number.isFinite(value) ? Math.min(12, Math.max(1, Math.round(value))) : 1;
+  return Number.isFinite(value) ? Math.min(getBatchLimit(), Math.max(1, Math.round(value))) : 1;
+}
+
+function getBatchLimit() {
+  return Math.min(12, getSelectedPreset()?.capabilities?.batchMax || 12);
 }
 
 function openConnectionDialog() {
-  elements.connectionBaseUrlInput.value = state.connection.baseUrl || state.health?.baseUrl || "https://apinebula.com";
+  elements.connectionBaseUrlInput.value = state.connection.baseUrl || state.health?.baseUrl || "https://img-api.apinebula.ai";
   elements.connectionApiKeyInput.value = state.connection.apiKey || "";
   elements.connectionKeyNote.textContent = state.connection.apiKey
     ? "当前标签页已设置网页 Key"
@@ -902,7 +998,7 @@ async function resetConnectionSettings() {
   elements.connectionApiKeyInput.value = "";
   try {
     await loadHealth();
-    elements.connectionBaseUrlInput.value = state.health?.baseUrl || "https://apinebula.com";
+    elements.connectionBaseUrlInput.value = state.health?.baseUrl || "https://img-api.apinebula.ai";
     updateConnectionPreview(state.health?.apiKeyConfigured ? "ready" : "warning");
     showToast("已恢复服务端配置", "success");
   } catch (error) {
@@ -1050,7 +1146,8 @@ async function api(path, options = {}) {
 function friendlyError(error) {
   const message = String(error?.message || error || "未知错误");
   if (/Missing APINEBULA_API_KEY/i.test(message)) return "未配置 API Key。请打开顶部连接设置输入网页 Key，或在服务端 .env 中配置。";
-  if (/403|无权访问.*Adobe/i.test(message)) return "当前 API Key 没有对应模型组的访问权限，请检查令牌分组。";
+  if (/403|does not belong|Unknown image preset/i.test(message)) return "当前 API Key、模型和分组不匹配，请检查模型分组后重试。";
+  if (/not supported|only supports/i.test(message)) return `当前分组不接受这组参数：${message}`;
   if (/无可用渠道|distributor/i.test(message)) return "当前令牌分组没有该模型的可用渠道，请更换匹配的 Key 或模型。";
   if (/任务超时|Timed out/i.test(message)) return "远程任务处理超时。任务 ID 已保留，可稍后重试或查询结果。";
   if (/fetch failed/i.test(message)) return "连接 APINebula 失败，请检查网络后重试。";
@@ -1059,7 +1156,9 @@ function friendlyError(error) {
 }
 
 function getJobModel(job) {
-  return job.payload?.model || job.request?.model || PRESET_LABELS[job.request?.preset] || job.request?.preset || "图像任务";
+  const model = job.payload?.model || job.request?.model;
+  const group = job.payload?.group;
+  return group && model ? `${model} · ${group}` : model || PRESET_LABELS[job.request?.preset] || job.request?.preset || "图像任务";
 }
 
 function getJobMode(job) {
@@ -1126,6 +1225,10 @@ function safeImageUrl(value) {
   if (typeof value !== "string") return "";
   if (value.startsWith("/api/files/")) return value;
   return isHttpUrl(value) ? value : "";
+}
+
+function shortImageFormat(value) {
+  return ({ "image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WebP", "image/gif": "GIF" })[value] || "图片";
 }
 
 function cleanPayload(payload) {

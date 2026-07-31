@@ -1,84 +1,102 @@
 ---
 name: nebula-canvas
-description: Generate images through APINebula with NebulaCanvas. Use when the user asks Codex to create images with APINebula, adobe-gpt-image-2, Nano Banana, adobe-nano-banana, adobe-nano-banana-pro, adobe-nano-banana-2, gpt-image-2, or wants Codex to call NebulaCanvas's CLI/MCP async image workflow.
+description: Generate or edit images through APINebula with NebulaCanvas. Use for gpt-image-2, gpt-image-2-4k, Gemini Nano Banana image models, or grok-imagine-image through the matching non-Adobe model group, using NebulaCanvas MCP, CLI, REST, or Web workflows.
 ---
 
 # NebulaCanvas
 
-Use this skill to generate or edit images with APINebula through NebulaCanvas.
+Use NebulaCanvas to generate or edit APINebula images. Route every request through the model's matching group and protocol.
 
 ## Configuration
 
-Require these environment variables in the NebulaCanvas MCP server or shell:
-
 ```env
 APINEBULA_API_KEY=your_api_key_here
-APINEBULA_BASE_URL=https://apinebula.com
-NEBULA_CANVAS_ADOBE_MODEL=adobe-gpt-image-2
-NEBULA_CANVAS_BANANA_MODEL=adobe-nano-banana-pro
+APINEBULA_BASE_URL=https://img-api.apinebula.ai
 NEBULA_CANVAS_IMAGE2_MODEL=gpt-image-2
+NEBULA_CANVAS_IMAGE2_4K_MODEL=gpt-image-2-4k
+NEBULA_CANVAS_NANOBANANA_MODEL=gemini-3.1-flash-image
+NEBULA_CANVAS_GROK_MODEL=grok-imagine-image
 NEBULA_CANVAS_OUTPUT_DIR=./outputs
+NEBULA_CANVAS_TIMEOUT_MS=1800000
 ```
 
-The model selected on the command line takes priority over the `.env` model. The `.env` model takes priority over NebulaCanvas built-in defaults.
+Never reveal or persist an API key. A model passed in the tool call overrides the environment default.
 
 ## Preset Routing
 
-Choose a preset from the user's request:
+| Intent | Preset | Group | Default model | Protocol |
+| --- | --- | --- | --- | --- |
+| Image 2 1K generation or editing | `image2` | `gpt-image-2-1k` | `gpt-image-2` | Images API |
+| Fixed 3840x2160 Image 2 generation or editing | `image2_4k` | `image2-4k` | `gpt-image-2-4k` | Images API |
+| Gemini image generation or editing | `nanobanana` | `nanobanana` | `gemini-3.1-flash-image` | Gemini native |
+| Grok image generation or editing | `grok` | `Grok` | `grok-imagine-image` | Chat Completions |
 
-| User intent | Preset | Default model env var | Token group |
-| --- | --- | --- | --- |
-| Adobe GPT Image 2, Adobe 2K/4K, cinematic/realistic image generation | `adobe` | `NEBULA_CANVAS_ADOBE_MODEL` | `adobe` |
-| Nano Banana, Banana Pro, Banana 2, Gemini-style image generation | `banana` | `NEBULA_CANVAS_BANANA_MODEL` | `adobe` |
-| gpt-image-2 1K image generation | `image2` | `NEBULA_CANVAS_IMAGE2_MODEL` | `image-2-1k` |
+Use `gpt-image-2-1k` or the legacy alias `image-2-1k` only as aliases for the `image2` preset.
 
-Use `banana` for any of these models:
+## MCP Tools
 
-- `adobe-nano-banana`
-- `adobe-nano-banana-pro`
-- `adobe-nano-banana-2`
+Prefer MCP when available:
 
-## Preferred Tool Flow
+- `nebula_canvas_generate_image`: requires `prompt` and either `preset` or `model`.
+- `nebula_canvas_edit_image`: requires `prompt`, `imagePaths`, and either `preset` or `model`.
+- `nebula_canvas_edit_image_async`: requires `prompt`, `imageUrls`, and either `preset` or `model`; despite its legacy name, it uses the selected documented synchronous protocol.
+- `nebula_canvas_get_task`: legacy task lookup only.
 
-Prefer the NebulaCanvas MCP tool when available:
+Common optional fields are `n`, `size`, `resolution`, `aspectRatio`, `quality`, `responseFormat`, `inputFidelity`, `outputDir`, `timeoutMs`, and `noDownload`. Only pass fields supported by the selected preset.
 
-- Tool: `nebula_canvas_generate_image`
-- Required input: `prompt`
-- Optional input: `preset`, `model`, `size`, `resolution`, `aspectRatio`, `quality`, `responseFormat`, `outputDir`
+## Parameter Rules
 
-For local image editing:
+### `image2`
 
-- Tool: `nebula_canvas_edit_image`
-- Required input: `prompt`, `imagePaths`
-- Default model: `gpt-image-2`
-- Token group: `image-2-1k`
+- Use model `gpt-image-2` and group `gpt-image-2-1k`.
+- Use `1024x1024` for generation. Edits may also use the documented `1536x1024` landscape value.
+- Use quality `auto`, `low`, `medium`, or `high`.
+- Keep `n=1`; this group does not provide 2K or 4K output.
+- Use `inputFidelity=high` only for edits.
 
-For async image editing with public image URLs:
+### `image2_4k`
 
-- Tool: `nebula_canvas_edit_image_async`
-- Required input: `prompt`, `imageUrls`
-- Default model: `gpt-image-2`
-- Token group: `image-2-1k`
+- Use model `gpt-image-2-4k` and group `image2-4k`.
+- Always use `size=3840x2160`.
+- `n` supports 1 through 10.
+- Use a timeout up to `1800000` ms for slow requests.
+- Use `inputFidelity=high` only for edits.
 
-If MCP is not available, run the CLI:
+### `nanobanana`
+
+- Use the `nanobanana` group and Gemini native protocol.
+- Use `resolution=1K|2K|4K` and a documented `aspectRatio`.
+- `gemini-2.5-flash-image` and its preview support only 1K.
+- Gemini 3.1 Flash, its preview, and Gemini 3 Pro preview support 1K, 2K, and 4K.
+- Do not pass `size`, `quality`, `responseFormat`, `inputFidelity`, or `n`.
+- The provider returns inline Base64; NebulaCanvas saves it locally and strips it from metadata.
+
+### `grok`
+
+- Use model `grok-imagine-image` and group `Grok`.
+- The current output is 1K.
+- Put `16:9`, `9:16`, or `1:1` directly in the prompt.
+- Do not pass `size`, `resolution`, `aspectRatio`, `quality`, `responseFormat`, `inputFidelity`, or `n`.
+- Read the Markdown image URL returned in the assistant message.
+
+## CLI Fallback
+
+The CLI currently generates images:
 
 ```bash
-nebula-canvas image generate --preset banana --prompt "A premium product poster, clean studio lighting, no text."
+node bin/nebula-canvas.js image generate --preset image2 --prompt "A clean product photograph, soft daylight, no text or watermark." --size 1024x1024 --quality high
 ```
 
-If the package is not globally linked, run:
+Use Web, REST, or MCP for image editing.
 
-```bash
-node bin/nebula-canvas.js image generate --preset banana --prompt "A premium product poster, clean studio lighting, no text."
-```
+## Result Handling
 
-## Parameter Guidance
+For user-facing results, report:
 
-- For `adobe`, use `size=3504x2336`, `resolution=4K`, and `aspectRatio=3:2` for large 3:2 output, or `1024x1024`, `resolution=1K`, and `aspectRatio=1:1` for a quick test.
-- For `banana`, use `adobe-nano-banana-pro` by default. Switch to `adobe-nano-banana` for faster/simple output or `adobe-nano-banana-2` when requested.
-- For `image2`, use `gpt-image-2` and prefer `size=1024x1024`.
-- For local edits, use `nebula_canvas_edit_image` with local file paths. Use `size=1024x1536` for vertical images or `1024x1024` for square images.
-- For async edits, use `nebula_canvas_edit_image_async` only when the reference image is already available as a public URL.
-- Always include a clear prompt with subject, setting, composition, lighting, style, and any text/no-text constraints.
+- selected preset, group, and model;
+- request id when returned;
+- remote image URL when returned;
+- local image path;
+- actual width, height, and MIME type from `inspections`.
 
-For user-facing responses, include the task id when present, generated local file path, and image URL if returned. Do not reveal API keys.
+Do not infer output resolution from request parameters. Do not expose API keys or full Base64 payloads.

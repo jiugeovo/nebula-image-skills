@@ -17,7 +17,7 @@
           <span class="brand-mark" aria-hidden="true"><i data-lucide="wand-sparkles"></i></span>
           <div>
             <h1>NebulaCanvas</h1>
-            <p>图像工作台</p>
+            <p>APINebula 图像工作台</p>
           </div>
         </div>
 
@@ -68,12 +68,13 @@
                 </div>
 
                 <div class="field-grid two-columns model-fields">
-                  <label class="field" data-generate-only>
-                    <span class="field-label">模型系列</span>
+                  <label class="field">
+                    <span class="field-label">模型分组</span>
                     <select name="preset" id="presetSelect">
-                      <option value="adobe">Adobe</option>
-                      <option value="banana">Banana</option>
-                      <option value="image2" selected>Image 2</option>
+                      <option value="image2" selected>Image 2 · 1K</option>
+                      <option value="image2_4k">Image 2 · 4K</option>
+                      <option value="nanobanana">Nano Banana</option>
+                      <option value="grok">Grok Imagine</option>
                     </select>
                   </label>
 
@@ -87,6 +88,7 @@
                   <span class="model-group-label"><i data-lucide="layers-3"></i>模型分组</span>
                   <code id="groupLabel" aria-live="polite">待加载</code>
                 </div>
+                <p class="model-capability-note" id="modelCapabilityNote"></p>
               </section>
 
               <section class="form-section reference-section" data-edit-sync-only hidden>
@@ -134,26 +136,18 @@
                 </label>
               </section>
 
-              <section class="form-section parameters-section" aria-labelledby="parametersTitle">
+              <section class="form-section parameters-section" id="parametersSection" aria-labelledby="parametersTitle">
                 <div class="form-section-heading">
                   <h3 id="parametersTitle">输出参数</h3>
                 </div>
 
-                <div class="field-grid two-columns">
-                  <label class="field">
+                <div class="field-grid two-columns" id="primaryParameterGrid">
+                  <label class="field" id="sizeField">
                     <span class="field-label">尺寸</span>
-                    <input name="size" id="sizeInput" list="sizeOptions" placeholder="1024x1024" autocomplete="off" />
-                    <datalist id="sizeOptions">
-                      <option value="1024x1024"></option>
-                      <option value="1024x1536"></option>
-                      <option value="1536x1024"></option>
-                      <option value="2048x2048"></option>
-                      <option value="3504x2336"></option>
-                      <option value="2336x3504"></option>
-                    </datalist>
+                    <select name="size" id="sizeInput"></select>
                   </label>
 
-                  <label class="field">
+                  <label class="field" id="qualityField">
                     <span class="field-label">质量</span>
                     <select name="quality" id="qualitySelect">
                       <option value="">模型默认</option>
@@ -165,8 +159,8 @@
                   </label>
                 </div>
 
-                <div class="field-grid two-columns" data-generate-only>
-                  <label class="field">
+                <div class="field-grid two-columns" id="secondaryParameterGrid">
+                  <label class="field" id="resolutionField">
                     <span class="field-label">分辨率</span>
                     <select name="resolution" id="resolutionSelect">
                       <option value="">模型默认</option>
@@ -176,20 +170,13 @@
                     </select>
                   </label>
 
-                  <label class="field">
+                  <label class="field" id="aspectRatioField">
                     <span class="field-label">画面比例</span>
-                    <input name="aspectRatio" id="aspectRatioInput" list="ratioOptions" placeholder="1:1" autocomplete="off" />
-                    <datalist id="ratioOptions">
-                      <option value="1:1"></option>
-                      <option value="3:2"></option>
-                      <option value="2:3"></option>
-                      <option value="16:9"></option>
-                      <option value="9:16"></option>
-                    </datalist>
+                    <select name="aspectRatio" id="aspectRatioInput"></select>
                   </label>
                 </div>
 
-                <label class="field" data-edit-sync-only hidden>
+                <label class="field" id="inputFidelityField" hidden>
                   <span class="field-label">输入跟随</span>
                   <select name="inputFidelity" id="inputFidelitySelect">
                     <option value="high">高</option>
@@ -243,7 +230,7 @@
                     <input name="outputDir" id="outputDirInput" placeholder="使用默认输出目录" autocomplete="off" />
                   </label>
 
-                  <label class="toggle-row">
+                  <label class="toggle-row" id="noDownloadField">
                     <span>
                       <strong>仅保留远程 URL</strong>
                       <small>跳过本地图片下载</small>
@@ -286,8 +273,8 @@
           <div class="stage-content" id="activeJob" aria-live="polite">
             <div class="empty-state">
               <span class="empty-icon" aria-hidden="true"><i data-lucide="images"></i></span>
-              <h3>画布已就绪</h3>
-              <p>新任务会显示在这里</p>
+              <h3>等待图像任务</h3>
+              <p>生成结果会显示在这里</p>
             </div>
           </div>
         </section>
@@ -340,7 +327,7 @@
               type="url"
               inputmode="url"
               autocomplete="url"
-              placeholder="https://apinebula.com"
+              placeholder="https://img-api.apinebula.ai"
               required
             />
             <small class="field-note">APINebula 或兼容服务的根地址，无需填写接口版本路径</small>

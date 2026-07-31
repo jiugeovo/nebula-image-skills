@@ -11,7 +11,7 @@ dotenv.config({ quiet: true });
 
 export function getConfig(overrides = {}) {
   const baseUrl = normalizeBaseUrl(
-    overrides.baseUrl || process.env.APINEBULA_BASE_URL || "https://apinebula.com",
+    overrides.baseUrl || process.env.APINEBULA_BASE_URL || "https://img-api.apinebula.ai",
   );
   const apiKey = overrides.apiKey || process.env.APINEBULA_API_KEY || "";
   const outputDir = path.resolve(
@@ -28,7 +28,7 @@ export function getConfig(overrides = {}) {
   const timeoutMs = numberFrom(
     overrides.timeoutMs,
     process.env.NEBULA_CANVAS_TIMEOUT_MS || process.env.TIANWEN_TIMEOUT_MS,
-    600000,
+    1800000,
   );
 
   return {

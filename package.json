@@ -1,14 +1,18 @@
 {
   "name": "nebula-canvas",
   "version": "0.1.0",
-  "description": "APINebula async image generation tools and Codex skills.",
+  "description": "APINebula image workbench for the browser, CLI, and MCP.",
   "type": "module",
   "bin": {
-    "nebula-canvas": "./bin/nebula-canvas.js"
+    "nebula-canvas": "./bin/nebula-canvas.js",
+    "nebula-canvas-mcp": "./bin/nebula-canvas-mcp.js",
+    "nebula-canvas-web": "./bin/nebula-canvas-web.js"
   },
   "scripts": {
     "check": "node scripts/check.mjs",
+    "cli": "node bin/nebula-canvas.js",
     "mcp": "node bin/nebula-canvas-mcp.js",
+    "start": "npm run web",
     "web": "node bin/nebula-canvas-web.js"
   },
   "keywords": [
