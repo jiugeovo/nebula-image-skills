@@ -102,12 +102,12 @@ function toCamel(value) {
 }
 
 function printHelp() {
-  console.log(`NebulaCanvas
+  console.log(`Jiuge Canva
 
 Usage:
-  nebula-canvas image generate --preset <image2|image2_4k|nanobanana|grok> --prompt <prompt> [options]
-  nebula-canvas image generate --model <model> --prompt <prompt> [options]
-  nebula-canvas models
+  jiuge-canva image generate --preset <image2|image2_4k|nanobanana|grok> --prompt <prompt> [options]
+  jiuge-canva image generate --model <model> --prompt <prompt> [options]
+  jiuge-canva models
 
 Options:
   --n <1-10>                       Image2 4K only; other groups return one image

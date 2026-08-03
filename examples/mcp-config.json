@@ -1,13 +1,13 @@
 ﻿{
   "mcpServers": {
-    "nebula-canvas": {
+    "jiuge-canva": {
       "command": "node",
-      "args": ["E:/codex/tianwen/bin/nebula-canvas-mcp.js"],
+      "args": ["E:/codex/jiuge-canva/bin/jiuge-canva-mcp.js"],
       "env": {
         "APINEBULA_API_KEY": "your_api_key_here",
         "APINEBULA_BASE_URL": "https://img-api.apinebula.ai",
-        "NEBULA_CANVAS_OUTPUT_DIR": "E:/codex/tianwen/outputs",
-        "NEBULA_CANVAS_TIMEOUT_MS": "1800000"
+        "JIUGE_CANVA_OUTPUT_DIR": "E:/codex/jiuge-canva/outputs",
+        "JIUGE_CANVA_TIMEOUT_MS": "1800000"
       }
     }
   }

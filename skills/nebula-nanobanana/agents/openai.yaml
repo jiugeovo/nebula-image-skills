@@ -1,0 +1,6 @@
+interface:
+  display_name: "Nebula Nano Banana"
+  short_description: "Generate and edit with Gemini image models"
+  default_prompt: "Use $nebula-nanobanana for APINebula Nano Banana or Gemini image generation and editing."
+policy:
+  allow_implicit_invocation: true

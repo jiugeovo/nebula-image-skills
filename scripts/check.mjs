@@ -125,8 +125,11 @@ assertThrows(
   "Nano 2.5 4K rejected",
 );
 
-process.env.NEBULA_CANVAS_NANOBANANA_MODEL = "gemini-3.1-flash-image-preview";
+process.env.JIUGE_CANVA_NANOBANANA_MODEL = "gemini-3.1-flash-image-preview";
 assert(applyPreset("nanobanana", { prompt: "x" }).model === "gemini-3.1-flash-image-preview", "environment model override");
+delete process.env.JIUGE_CANVA_NANOBANANA_MODEL;
+process.env.NEBULA_CANVAS_NANOBANANA_MODEL = "gemini-3-pro-image-preview";
+assert(applyPreset("nanobanana", { prompt: "x" }).model === "gemini-3-pro-image-preview", "legacy environment model override");
 delete process.env.NEBULA_CANVAS_NANOBANANA_MODEL;
 
 const compactedJob = compactJobForMemory({
@@ -163,12 +166,63 @@ await runWithConcurrency([0, 1, 2, 3, 4], 2, async (item) => {
 assert(maxActiveWorkers === 2, "batch concurrency helper");
 assert(processedItems.sort().join(",") === "0,1,2,3,4", "batch processes every item");
 
-const skillFile = path.join(root, "skills", "nebula-canvas", "SKILL.md");
-const skillContent = fs.readFileSync(skillFile, "utf8");
-assert(skillContent.startsWith("---\n"), "skill frontmatter");
-assert(skillContent.includes("name: nebula-canvas"), "skill name");
+const skillNames = [
+  "jiuge-canva",
+  "nebula-image2-1k",
+  "nebula-image2-4k",
+  "nebula-nanobanana",
+  "nebula-grok",
+];
+for (const skillName of skillNames) {
+  const skillDir = path.join(root, "skills", skillName);
+  const skillFile = path.join(skillDir, "SKILL.md");
+  const skillContent = fs.readFileSync(skillFile, "utf8");
+  assert(skillContent.startsWith("---\n"), `${skillName} frontmatter`);
+  assert(skillContent.includes(`name: ${skillName}`), `${skillName} name`);
 
-const tempOutputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "nebula-canvas-check-"));
+  const interfaceFile = path.join(skillDir, "agents", "openai.yaml");
+  const interfaceContent = fs.readFileSync(interfaceFile, "utf8");
+  assert(interfaceContent.includes(`Use $${skillName}`), `${skillName} default prompt`);
+}
+
+const expectedSkills = {
+  image2: "nebula-image2-1k",
+  image2_4k: "nebula-image2-4k",
+  nanobanana: "nebula-nanobanana",
+  grok: "nebula-grok",
+};
+const standaloneConfigs = {
+  "nebula-image2-1k": { preset: "image2", group: "gpt-image-2-1k", transport: "images" },
+  "nebula-image2-4k": { preset: "image2_4k", group: "image2-4k", transport: "images" },
+  "nebula-nanobanana": { preset: "nanobanana", group: "nanobanana", transport: "gemini" },
+  "nebula-grok": { preset: "grok", group: "Grok", transport: "chat" },
+};
+for (const [skillName, expected] of Object.entries(standaloneConfigs)) {
+  const skillDir = path.join(root, "skills", skillName);
+  const configPath = path.join(skillDir, "scripts", "config.json");
+  const runnerPath = path.join(skillDir, "scripts", "generate_image.py");
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const runnerContent = fs.readFileSync(runnerPath, "utf8");
+  assert(config.name === skillName, `${skillName} standalone config name`);
+  assert(config.preset === expected.preset, `${skillName} standalone preset`);
+  assert(config.group === expected.group, `${skillName} standalone group`);
+  assert(config.transport === expected.transport, `${skillName} standalone transport`);
+  assert(runnerContent.includes("APINEBULA_API_KEY"), `${skillName} standalone authentication`);
+  assert(!/sk-[a-z0-9]{20,}/i.test(runnerContent), `${skillName} standalone key scan`);
+}
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+assert(packageJson.name === "jiuge-canva", "package name");
+assert(packageJson.bin?.["jiuge-canva"] === "./bin/jiuge-canva.js", "primary CLI bin");
+assert(packageJson.bin?.["jiuge-canva-mcp"] === "./bin/jiuge-canva-mcp.js", "primary MCP bin");
+assert(packageJson.bin?.["jiuge-canva-web"] === "./bin/jiuge-canva-web.js", "primary Web bin");
+assert(typeof packageJson.scripts?.["package:skills"] === "string", "Skill packaging script");
+assert(packageJson.files.includes("scripts"), "packaging script included in npm files");
+for (const [presetName, skillName] of Object.entries(expectedSkills)) {
+  const preset = getPresetSummary().find((item) => item.name === presetName);
+  assert(preset?.skill === skillName, `${presetName} skill mapping`);
+}
+
+const tempOutputDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "jiuge-canva-check-"));
 const nestedOutputDir = path.join(tempOutputDir, "nested");
 const tempImage = path.join(nestedOutputDir, "check.png");
 await fs.promises.mkdir(nestedOutputDir);
@@ -181,11 +235,11 @@ const mockApi = await startMockApi();
 const previousEnv = {
   apiKey: process.env.APINEBULA_API_KEY,
   baseUrl: process.env.APINEBULA_BASE_URL,
-  timeout: process.env.NEBULA_CANVAS_TIMEOUT_MS,
+  timeout: process.env.JIUGE_CANVA_TIMEOUT_MS,
 };
 process.env.APINEBULA_API_KEY = "test-key";
 process.env.APINEBULA_BASE_URL = mockApi.baseUrl;
-process.env.NEBULA_CANVAS_TIMEOUT_MS = "5000";
+process.env.JIUGE_CANVA_TIMEOUT_MS = "5000";
 
 const directClient = new APINebulaClient({
   apiKey: "test-key",
@@ -213,6 +267,8 @@ assert(geminiArtifacts.downloadedFiles.length === 1, "inline-only Gemini image i
 assert(inspectImageBuffer(await fs.promises.readFile(geminiArtifacts.downloadedFiles[0])).width === 1, "saved Gemini image is valid");
 const geminiMetadata = JSON.parse(await fs.promises.readFile(geminiArtifacts.metadataPath, "utf8"));
 assert(geminiMetadata.candidates[0].content.parts[0].inlineData.data === "[omitted]", "Gemini metadata omits Base64");
+assert(geminiMetadata.jiuge_canva?.model === "gemini-3.1-flash-image", "new metadata namespace");
+assert(geminiMetadata.nebula_canvas?.model === "gemini-3.1-flash-image", "legacy metadata namespace");
 
 const urlOnlyArtifacts = await saveImageResponseArtifacts({
   response: {
@@ -335,11 +391,11 @@ try {
   await mockApi.close();
   restoreEnv("APINEBULA_API_KEY", previousEnv.apiKey);
   restoreEnv("APINEBULA_BASE_URL", previousEnv.baseUrl);
-  restoreEnv("NEBULA_CANVAS_TIMEOUT_MS", previousEnv.timeout);
+  restoreEnv("JIUGE_CANVA_TIMEOUT_MS", previousEnv.timeout);
   await fs.promises.rm(tempOutputDir, { recursive: true, force: true });
 }
 
-console.log("NebulaCanvas checks passed.");
+console.log("jiuge-canva checks passed.");
 
 function assert(condition, message) {
   if (!condition) throw new Error(`Check failed: ${message}`);

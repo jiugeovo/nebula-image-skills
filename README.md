@@ -1,6 +1,6 @@
-# NebulaCanvas
+# jiuge-canva
 
-NebulaCanvas 是一个本地 APINebula 图像工作台，提供三种使用入口：
+jiuge-canva 是一个本地 APINebula 图像工作台，提供三种使用入口：
 
 - PC 浏览器可视化页面：生图、本地改图、URL 改图、批量任务和结果预览。
 - CLI：适合脚本、PowerShell 和自动化生成。
@@ -10,12 +10,12 @@ NebulaCanvas 是一个本地 APINebula 图像工作台，提供三种使用入�
 
 ## 支持的模型分组
 
-| 预设 | APINebula 分组 | 默认模型 | 协议 |
-| --- | --- | --- | --- |
-| `image2` | `gpt-image-2-1k` | `gpt-image-2` | Images API |
-| `image2_4k` | `image2-4k` | `gpt-image-2-4k` | Images API |
-| `nanobanana` | `nanobanana` | `gemini-3.1-flash-image` | Gemini `generateContent` |
-| `grok` | `Grok` | `grok-imagine-image` | Chat Completions |
+| 预设 | APINebula 分组 | 默认模型 | 协议 | 专用 Skill |
+| --- | --- | --- | --- | --- |
+| `image2` | `gpt-image-2-1k` | `gpt-image-2` | Images API | `nebula-image2-1k` |
+| `image2_4k` | `image2-4k` | `gpt-image-2-4k` | Images API | `nebula-image2-4k` |
+| `nanobanana` | `nanobanana` | `gemini-3.1-flash-image` | Gemini `generateContent` | `nebula-nanobanana` |
+| `grok` | `Grok` | `grok-imagine-image` | Chat Completions | `nebula-grok` |
 
 参数和分组以 [APINebula 图片文档](https://docs.apinebula.ai/docs/advanced/image) 为依据。Adobe 分组不在当前项目中。
 
@@ -28,7 +28,7 @@ NebulaCanvas 是一个本地 APINebula 图像工作台，提供三种使用入�
 - npm 10 或兼容版本。
 - 与所选模型分组匹配的 APINebula API Key。
 
-不需要 Python、数据库、Docker、全局前端构建工具或原生图像处理库。
+主项目运行不需要 Python、数据库、Docker、全局前端构建工具或原生图像处理库。只有直接运行独立 Skill ZIP 内的脚本时需要 Python 3.9+。
 
 ### 项目直接依赖
 
@@ -46,8 +46,8 @@ NebulaCanvas 是一个本地 APINebula 图像工作台，提供三种使用入�
 ## 安装
 
 ```powershell
-git clone https://github.com/jiugeovo/nebula-canvas.git
-cd nebula-canvas
+git clone https://github.com/jiugeovo/jiuge-canva.git
+cd jiuge-canva
 npm ci
 Copy-Item .env.example .env
 ```
@@ -68,15 +68,17 @@ npm install --cache .\.npm-cache
 
 ```powershell
 npm link
-nebula-canvas --help
-nebula-canvas-web --help
+jiuge-canva --help
+jiuge-canva-web --help
 ```
 
 `npm link` 后可直接使用：
 
-- `nebula-canvas`：CLI。
-- `nebula-canvas-web`：Web 服务。
-- `nebula-canvas-mcp`：MCP Server。
+- `jiuge-canva`：CLI。
+- `jiuge-canva-web`：Web 服务。
+- `jiuge-canva-mcp`：MCP Server。
+
+旧的 `nebula-canvas*` 命令仍作为兼容别名保留；新配置请使用 `jiuge-canva*`。
 
 ## 配置
 
@@ -86,15 +88,15 @@ nebula-canvas-web --help
 APINEBULA_API_KEY=your_api_key_here
 APINEBULA_BASE_URL=https://img-api.apinebula.ai
 
-NEBULA_CANVAS_IMAGE2_MODEL=gpt-image-2
-NEBULA_CANVAS_IMAGE2_4K_MODEL=gpt-image-2-4k
-NEBULA_CANVAS_NANOBANANA_MODEL=gemini-3.1-flash-image
-NEBULA_CANVAS_GROK_MODEL=grok-imagine-image
+JIUGE_CANVA_IMAGE2_MODEL=gpt-image-2
+JIUGE_CANVA_IMAGE2_4K_MODEL=gpt-image-2-4k
+JIUGE_CANVA_NANOBANANA_MODEL=gemini-3.1-flash-image
+JIUGE_CANVA_GROK_MODEL=grok-imagine-image
 
-NEBULA_CANVAS_OUTPUT_DIR=./outputs
-NEBULA_CANVAS_TIMEOUT_MS=1800000
-NEBULA_CANVAS_WEB_HOST=127.0.0.1
-NEBULA_CANVAS_WEB_PORT=8787
+JIUGE_CANVA_OUTPUT_DIR=./outputs
+JIUGE_CANVA_TIMEOUT_MS=1800000
+JIUGE_CANVA_WEB_HOST=127.0.0.1
+JIUGE_CANVA_WEB_PORT=8787
 ```
 
 注意：
@@ -103,6 +105,7 @@ NEBULA_CANVAS_WEB_PORT=8787
 - `.env` 已被 Git 忽略，不要把真实 Key 写入源码、README 或提交记录。
 - Web 页面可以直接设置 Base URL 和 Key，因此只使用 Web 时可以不在 `.env` 中填写 Key。
 - CLI 和 MCP 建议使用 `.env` 或 MCP 客户端的 `env` 配置。
+- 旧的 `NEBULA_CANVAS_*` 环境变量仍可读取，但新配置应使用 `JIUGE_CANVA_*`。
 
 ## Web 可视化页面
 
@@ -121,13 +124,13 @@ Start-Process http://127.0.0.1:8787
 指定监听地址或端口：
 
 ```powershell
-node bin\nebula-canvas-web.js --host 127.0.0.1 --port 8788
+node bin\jiuge-canva-web.js --host 127.0.0.1 --port 8788
 ```
 
 安装过 `npm link` 时也可以使用：
 
 ```powershell
-nebula-canvas-web --port 8788
+jiuge-canva-web --port 8788
 ```
 
 ### 首次出图
@@ -208,7 +211,7 @@ npm run cli -- image generate `
 
 Grok 的比例写在提示词中，不要传 `--size`、`--resolution`、`--aspect-ratio`、`--quality` 或 `--n`。
 
-安装过 `npm link` 后，把示例中的 `npm run cli --` 替换成 `nebula-canvas` 即可。
+安装过 `npm link` 后，把示例中的 `npm run cli --` 替换成 `jiuge-canva` 即可。
 
 ## MCP Server
 
@@ -219,44 +222,108 @@ MCP 使用 stdio，不需要额外开放端口。项目内配置示例位于 `ex
 ```json
 {
   "mcpServers": {
-    "nebula-canvas": {
+    "jiuge-canva": {
       "command": "node",
-      "args": ["E:/codex/tianwen/bin/nebula-canvas-mcp.js"],
+      "args": ["E:/codex/jiuge-canva/bin/jiuge-canva-mcp.js"],
       "env": {
         "APINEBULA_API_KEY": "your_api_key_here",
         "APINEBULA_BASE_URL": "https://img-api.apinebula.ai",
-        "NEBULA_CANVAS_OUTPUT_DIR": "E:/codex/tianwen/outputs",
-        "NEBULA_CANVAS_TIMEOUT_MS": "1800000"
+        "JIUGE_CANVA_OUTPUT_DIR": "E:/codex/jiuge-canva/outputs",
+        "JIUGE_CANVA_TIMEOUT_MS": "1800000"
       }
     }
   }
 }
 ```
 
-复制到其他目录后，需要把 `args` 和输出目录改成实际绝对路径。安装过 `npm link` 的客户端也可以把命令改为 `nebula-canvas-mcp`。
+复制到其他目录后，需要把 `args` 和输出目录改成实际绝对路径。安装过 `npm link` 的客户端也可以把命令改为 `jiuge-canva-mcp`。
 
 当前 MCP 工具：
 
 | 工具 | 用途 |
 | --- | --- |
-| `nebula_canvas_generate_image` | 文本生图 |
-| `nebula_canvas_edit_image` | 使用本地参考图改图 |
-| `nebula_canvas_edit_image_async` | 使用公网 URL 参考图改图；工具名为兼容保留 |
-| `nebula_canvas_get_task` | 查询旧异步图片任务 |
+| `jiuge_canva_generate_image` | 文本生图 |
+| `jiuge_canva_edit_image` | 使用本地参考图改图 |
+| `jiuge_canva_edit_image_async` | 使用公网 URL 参考图改图；后缀为兼容保留 |
+| `jiuge_canva_get_task` | 查询旧异步图片任务 |
+
+旧的 `nebula_canvas_*` MCP 工具名仍注册为兼容别名。
 
 常用参数包括 `preset`、`model`、`prompt`、`size`、`resolution`、`aspectRatio`、`quality`、`n`、`outputDir` 和 `timeoutMs`。只传所选模型分组支持的参数。
 
-## Codex Skill（可选）
+## Codex Skills（可选）
 
-项目自带 `skills/nebula-canvas`。安装到当前 Windows 用户：
+项目将 Skill 按模型分组拆开。`jiuge-canva` 是很薄的默认路由入口；四个专用 Skill 只描述各自协议、模型和参数边界。它们共用同一套 CLI、MCP、REST 和 Web 运行时，不会产生四份后端实现。
+
+安装全部 Skill 到当前 Windows 用户：
 
 ```powershell
-$skillRoot = Join-Path $env:USERPROFILE ".codex\skills"
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+$skillRoot = Join-Path $codexHome "skills"
 New-Item -ItemType Directory -Force $skillRoot | Out-Null
-Copy-Item -Recurse -Force .\skills\nebula-canvas $skillRoot
+Get-ChildItem .\skills -Directory | ForEach-Object {
+  Copy-Item -Recurse -Force $_.FullName $skillRoot
+}
 ```
 
-重启 Codex 后即可使用 `$nebula-canvas`。Skill 负责说明模型路由和参数规则，实际执行仍通过 MCP、CLI、REST 或 Web。
+重启 Codex 后可使用：
+
+- `$jiuge-canva`：未指定模型时的默认路由。
+- `$nebula-image2-1k`：`gpt-image-2-1k`。
+- `$nebula-image2-4k`：固定 `3840x2160` 的 Image2 4K。
+- `$nebula-nanobanana`：Nano Banana/Gemini 图片模型。
+- `$nebula-grok`：Grok Imagine。
+
+例如：
+
+```text
+Use $nebula-image2-4k to generate a wide anime landscape at 3840x2160.
+```
+
+如果只需要某一组，也可以只复制对应目录；但要使用未指定模型的默认路由，需要同时安装 `jiuge-canva`。
+
+Skill 只负责选择模型和约束参数，实际执行仍通过 MCP、CLI、REST 或 Web。核心参数注册表位于 `src/models.js`，是唯一事实来源。
+
+### 四个独立 Skill 包
+
+四个模型 Skill 也可以分别打包和安装，不需要安装 `jiuge-canva` 路由 Skill：
+
+```powershell
+npm run package:skills
+Get-ChildItem .\dist\skills\*.zip
+```
+
+产物位于 `dist/skills/`：
+
+```text
+nebula-image2-1k.zip
+nebula-image2-4k.zip
+nebula-nanobanana.zip
+nebula-grok.zip
+SHA256SUMS.txt
+```
+
+只安装一个 Skill：
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+$skillRoot = Join-Path $codexHome "skills"
+New-Item -ItemType Directory -Force $skillRoot | Out-Null
+Expand-Archive .\dist\skills\nebula-image2-4k.zip -DestinationPath $skillRoot -Force
+```
+
+独立包内含该模型自己的 `SKILL.md`、UI 元数据、参数配置和 Python 标准库运行器；因此即使没有其他三个 Skill，也可以直接调用该模型。直接运行包内脚本时需要 Python 3.9+，并在进程环境中设置 `APINEBULA_API_KEY`。例如：
+
+```powershell
+$skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-image2-4k"
+python "$skill\scripts\generate_image.py" `
+  --prompt "wide anime mountain valley, no text or watermark" `
+  --quality high `
+  --timeout 1800 `
+  --output .\mountain.png
+```
+
+独立运行器支持生图、本地参考图编辑、`APINEBULA_BASE_URL`/`--base-url` 覆盖、结果下载和真实像素检查。`dist/` 仅是本地打包产物，已被 Git 忽略，不会进入源码提交。
 
 ## 输出文件
 
@@ -281,7 +348,7 @@ outputs/batches/<timestamp>-<batch-id>/
 └─ manifest.json
 ```
 
-NebulaCanvas 会检查下载图片的签名、MIME、字节数和真实宽高。请求中的尺寸只是上游参数，最终结果请以页面或 `inspections` 中的实际像素为准。
+jiuge-canva 会检查下载图片的签名、MIME、字节数和真实宽高。请求中的尺寸只是上游参数，最终结果请以页面或 `inspections` 中的实际像素为准。
 
 ## 参数速查
 
@@ -300,6 +367,7 @@ NebulaCanvas 会检查下载图片的签名、MIME、字节数和真实宽高。
 | `npm run cli -- --help` | 查看 CLI 帮助 |
 | `npm run cli -- models` | 查看模型能力注册表 |
 | `npm run mcp` | 启动 stdio MCP Server |
+| `npm run package:skills` | 生成四个独立 Skill ZIP 和 SHA-256 清单 |
 | `npm run check` | 运行 Mock 上游与 Web/协议自动检查 |
 
 ## 验证安装
@@ -311,8 +379,8 @@ node --check src\models.js
 node --check src\cli.js
 node --check src\web-server.js
 node --check public\app.js
-node --check bin\nebula-canvas-mcp.js
-node --check bin\nebula-canvas-web.js
+node --check bin\jiuge-canva-mcp.js
+node --check bin\jiuge-canva-web.js
 npm pack --dry-run
 ```
 
@@ -334,7 +402,7 @@ npm pack --dry-run
 
 ### 为什么请求尺寸和下载图片尺寸不同
 
-上游可能返回与请求元数据不同的真实像素。NebulaCanvas 会在保存后读取图片文件并展示实际宽高。
+上游可能返回与请求元数据不同的真实像素。jiuge-canva 会在保存后读取图片文件并展示实际宽高。
 
 ### 任务历史为什么重启后消失
 

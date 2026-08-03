@@ -1,0 +1,11 @@
+.git/
+.github/
+.npm-cache/
+node_modules/
+outputs/
+dist/
+tmp/
+.env
+**/__pycache__/
+**/*.pyc
+*.log

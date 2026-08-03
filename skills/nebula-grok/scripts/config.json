@@ -1,0 +1,9 @@
+{
+  "name": "nebula-grok",
+  "label": "Nebula Grok Imagine",
+  "preset": "grok",
+  "group": "Grok",
+  "transport": "chat",
+  "model": "grok-imagine-image",
+  "default_timeout_seconds": 180
+}

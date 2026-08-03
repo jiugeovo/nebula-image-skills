@@ -1,6 +1,0 @@
-interface:
-  display_name: "NebulaCanvas"
-  short_description: "Generate or edit APINebula images with Image2, Nano Banana, or Grok."
-  default_prompt: "Use $nebula-canvas to generate or edit an APINebula image with the matching non-Adobe model group."
-policy:
-  allow_implicit_invocation: true

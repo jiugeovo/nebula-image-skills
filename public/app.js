@@ -39,6 +39,10 @@ const PRESET_LABELS = {
   grok: "Grok Imagine",
 };
 const STORAGE_KEYS = {
+  baseUrl: "jiuge-canva.base-url",
+  apiKey: "jiuge-canva.api-key",
+};
+const LEGACY_STORAGE_KEYS = {
   baseUrl: "nebula-canvas.base-url",
   apiKey: "nebula-canvas.api-key",
 };
@@ -995,6 +999,8 @@ async function resetConnectionSettings() {
   state.connection = { baseUrl: "", apiKey: "" };
   localStorage.removeItem(STORAGE_KEYS.baseUrl);
   sessionStorage.removeItem(STORAGE_KEYS.apiKey);
+  localStorage.removeItem(LEGACY_STORAGE_KEYS.baseUrl);
+  sessionStorage.removeItem(LEGACY_STORAGE_KEYS.apiKey);
   elements.connectionApiKeyInput.value = "";
   try {
     await loadHealth();
@@ -1033,8 +1039,14 @@ function updateConnectionPreview(stateName, message) {
 function loadConnectionSettings() {
   try {
     return {
-      baseUrl: localStorage.getItem(STORAGE_KEYS.baseUrl) || "",
-      apiKey: sessionStorage.getItem(STORAGE_KEYS.apiKey) || "",
+      baseUrl:
+        localStorage.getItem(STORAGE_KEYS.baseUrl) ||
+        localStorage.getItem(LEGACY_STORAGE_KEYS.baseUrl) ||
+        "",
+      apiKey:
+        sessionStorage.getItem(STORAGE_KEYS.apiKey) ||
+        sessionStorage.getItem(LEGACY_STORAGE_KEYS.apiKey) ||
+        "",
     };
   } catch {
     return { baseUrl: "", apiKey: "" };
@@ -1047,6 +1059,8 @@ function persistConnectionSettings() {
     else localStorage.removeItem(STORAGE_KEYS.baseUrl);
     if (state.connection.apiKey) sessionStorage.setItem(STORAGE_KEYS.apiKey, state.connection.apiKey);
     else sessionStorage.removeItem(STORAGE_KEYS.apiKey);
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.baseUrl);
+    sessionStorage.removeItem(LEGACY_STORAGE_KEYS.apiKey);
   } catch {
     // Private browsing may disable web storage; the in-memory settings still work.
   }

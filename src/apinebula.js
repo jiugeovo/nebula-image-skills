@@ -333,11 +333,13 @@ export async function saveImageResponseArtifacts({ response, model, outputDir, d
   }
 
   const metadata = omitBase64Payloads(response);
-  metadata.nebula_canvas = {
+  const artifactMetadata = {
     model,
     imageUrls,
     artifacts: inspections,
   };
+  metadata.jiuge_canva = artifactMetadata;
+  metadata.nebula_canvas = artifactMetadata;
   await fs.promises.writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
 
   return {

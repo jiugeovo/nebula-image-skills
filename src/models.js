@@ -24,11 +24,12 @@ const NANO_ASPECT_RATIOS = [
 export const MODEL_PRESETS = {
   image2: {
     label: "Image 2 · 1K",
-    skill: "nebula-canvas",
+    skill: "nebula-image2-1k",
     group: "gpt-image-2-1k",
     transport: "images",
     models: ["gpt-image-2"],
-    envModel: "NEBULA_CANVAS_IMAGE2_MODEL",
+    envModel: "JIUGE_CANVA_IMAGE2_MODEL",
+    legacyEnvModels: ["NEBULA_CANVAS_IMAGE2_MODEL"],
     defaults: {
       model: "gpt-image-2",
       size: "1024x1024",
@@ -58,11 +59,12 @@ export const MODEL_PRESETS = {
   },
   image2_4k: {
     label: "Image 2 · 4K",
-    skill: "nebula-canvas",
+    skill: "nebula-image2-4k",
     group: "image2-4k",
     transport: "images",
     models: ["gpt-image-2-4k"],
-    envModel: "NEBULA_CANVAS_IMAGE2_4K_MODEL",
+    envModel: "JIUGE_CANVA_IMAGE2_4K_MODEL",
+    legacyEnvModels: ["NEBULA_CANVAS_IMAGE2_4K_MODEL"],
     defaults: {
       model: "gpt-image-2-4k",
       size: "3840x2160",
@@ -88,7 +90,7 @@ export const MODEL_PRESETS = {
   },
   nanobanana: {
     label: "Nano Banana",
-    skill: "nebula-canvas",
+    skill: "nebula-nanobanana",
     group: "nanobanana",
     transport: "gemini",
     models: [
@@ -98,7 +100,8 @@ export const MODEL_PRESETS = {
       "gemini-2.5-flash-image",
       "gemini-2.5-flash-image-preview",
     ],
-    envModel: "NEBULA_CANVAS_NANOBANANA_MODEL",
+    envModel: "JIUGE_CANVA_NANOBANANA_MODEL",
+    legacyEnvModels: ["NEBULA_CANVAS_NANOBANANA_MODEL"],
     defaults: {
       model: "gemini-3.1-flash-image",
       resolution: "1K",
@@ -130,11 +133,12 @@ export const MODEL_PRESETS = {
   },
   grok: {
     label: "Grok Imagine",
-    skill: "nebula-canvas",
+    skill: "nebula-grok",
     group: "Grok",
     transport: "chat",
     models: ["grok-imagine-image"],
-    envModel: "NEBULA_CANVAS_GROK_MODEL",
+    envModel: "JIUGE_CANVA_GROK_MODEL",
+    legacyEnvModels: ["NEBULA_CANVAS_GROK_MODEL"],
     defaults: {
       model: "grok-imagine-image",
     },
@@ -208,6 +212,7 @@ export function getPresetSummary(env = process.env) {
   return Object.entries(getModelPresets(env)).map(([name, preset]) => ({
     name,
     label: preset.label,
+    skill: preset.skill,
     group: preset.group,
     transport: preset.transport,
     models: preset.models,
@@ -221,7 +226,10 @@ export function getModelPresets(env = process.env) {
   return Object.fromEntries(
     Object.entries(MODEL_PRESETS).map(([name, preset]) => [
       name,
-      withEnvDefault(preset, env[preset.envModel]),
+      withEnvDefault(
+        preset,
+        firstEnvValue(env, [preset.envModel, ...(preset.legacyEnvModels || [])]),
+      ),
     ]),
   );
 }
@@ -317,4 +325,8 @@ function withEnvDefault(preset, model) {
       model,
     },
   };
+}
+
+function firstEnvValue(env, names) {
+  return names.map((name) => env[name]).find((value) => value !== undefined && value !== "");
 }

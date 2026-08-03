@@ -840,7 +840,7 @@ function setCommonHeaders(response) {
 }
 
 async function readMultipartForm(request, contentType) {
-  const uploadDir = await fsp.mkdtemp(path.join(os.tmpdir(), "nebula-canvas-upload-"));
+  const uploadDir = await fsp.mkdtemp(path.join(os.tmpdir(), "jiuge-canva-upload-"));
   const fields = {};
   const files = [];
   let totalFileBytes = 0;

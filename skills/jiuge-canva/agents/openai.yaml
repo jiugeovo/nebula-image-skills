@@ -1,0 +1,6 @@
+interface:
+  display_name: "jiuge-canva"
+  short_description: "Route generic APINebula image requests to a model skill."
+  default_prompt: "Use $jiuge-canva to route a generic APINebula image generation or editing request."
+policy:
+  allow_implicit_invocation: true

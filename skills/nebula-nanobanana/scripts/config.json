@@ -1,0 +1,29 @@
+{
+  "name": "nebula-nanobanana",
+  "label": "Nebula Nano Banana",
+  "preset": "nanobanana",
+  "group": "nanobanana",
+  "transport": "gemini",
+  "model": "gemini-3.1-flash-image",
+  "models": [
+    "gemini-3.1-flash-image",
+    "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image-preview",
+    "gemini-2.5-flash-image",
+    "gemini-2.5-flash-image-preview"
+  ],
+  "model_resolutions": {
+    "gemini-3.1-flash-image": ["1K", "2K", "4K"],
+    "gemini-3.1-flash-image-preview": ["1K", "2K", "4K"],
+    "gemini-3-pro-image-preview": ["1K", "2K", "4K"],
+    "gemini-2.5-flash-image": ["1K"],
+    "gemini-2.5-flash-image-preview": ["1K"]
+  },
+  "default_resolution": "1K",
+  "default_aspect_ratio": "1:1",
+  "aspect_ratios": [
+    "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3",
+    "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"
+  ],
+  "default_timeout_seconds": 600
+}

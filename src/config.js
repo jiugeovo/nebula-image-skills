@@ -16,18 +16,23 @@ export function getConfig(overrides = {}) {
   const apiKey = overrides.apiKey || process.env.APINEBULA_API_KEY || "";
   const outputDir = path.resolve(
     overrides.outputDir ||
+      process.env.JIUGE_CANVA_OUTPUT_DIR ||
       process.env.NEBULA_CANVAS_OUTPUT_DIR ||
       process.env.TIANWEN_OUTPUT_DIR ||
       path.join(projectRoot, "outputs"),
   );
   const pollIntervalMs = numberFrom(
     overrides.pollIntervalMs,
-    process.env.NEBULA_CANVAS_POLL_INTERVAL_MS || process.env.TIANWEN_POLL_INTERVAL_MS,
+    process.env.JIUGE_CANVA_POLL_INTERVAL_MS ||
+      process.env.NEBULA_CANVAS_POLL_INTERVAL_MS ||
+      process.env.TIANWEN_POLL_INTERVAL_MS,
     5000,
   );
   const timeoutMs = numberFrom(
     overrides.timeoutMs,
-    process.env.NEBULA_CANVAS_TIMEOUT_MS || process.env.TIANWEN_TIMEOUT_MS,
+    process.env.JIUGE_CANVA_TIMEOUT_MS ||
+      process.env.NEBULA_CANVAS_TIMEOUT_MS ||
+      process.env.TIANWEN_TIMEOUT_MS,
     1800000,
   );
 
