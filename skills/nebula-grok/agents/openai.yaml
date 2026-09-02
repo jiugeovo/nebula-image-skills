@@ -1,6 +1,0 @@
-interface:
-  display_name: "Nebula Grok Imagine"
-  short_description: "Generate and edit with Grok Imagine"
-  default_prompt: "Use $nebula-grok to generate or edit an APINebula Grok Imagine image."
-policy:
-  allow_implicit_invocation: true

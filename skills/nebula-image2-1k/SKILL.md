@@ -7,7 +7,7 @@ description: Generate or edit images with APINebula's gpt-image-2-1k group. Use 
 
 Use this Skill when the user explicitly asks for Image2 1K or the
 `gpt-image-2-1k` group. Keep the request on this group; do not silently move
-it to Gemini, Grok, or Image2 4K.
+it to Gemini or Image2 4K.
 
 ## Contract
 

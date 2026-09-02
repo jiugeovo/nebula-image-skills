@@ -7,7 +7,7 @@ description: Generate or edit images through APINebula's Gemini-native Nano Bana
 
 Use this Skill when the user asks for Nano Banana or a Gemini image model.
 Use the Gemini `generateContent` protocol defined by the runner; do not
-translate the request to an Images API or chat-completions request.
+translate the request to an Images API request.
 
 ## Contract
 

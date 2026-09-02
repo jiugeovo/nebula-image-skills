@@ -115,7 +115,7 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         )
         parser.add_argument("--resolution", choices=resolutions, help="Image resolution")
         parser.add_argument("--aspect-ratio", dest="aspect_ratio", choices=config["aspect_ratios"], help="Image aspect ratio")
-    elif transport != "chat":
+    else:
         parser.error(f"Unsupported Skill transport: {transport}")
     return parser
 
@@ -185,10 +185,6 @@ def resolve_settings(config: Dict[str, Any], args: argparse.Namespace, reference
         settings.update({"model": model, "resolution": resolution, "aspect_ratio": aspect_ratio, "count": 1})
         return settings
 
-    if config["transport"] == "chat":
-        settings["count"] = 1
-        return settings
-
     raise SkillError(f"Unsupported Skill transport: {config['transport']}")
 
 
@@ -217,7 +213,7 @@ def endpoint_for(settings: Dict[str, Any]) -> str:
     elif settings["transport"] == "gemini":
         suffix = f"/v1beta/models/{quote(settings['model'], safe='.-_~')}:generateContent"
     else:
-        suffix = "/v1/chat/completions"
+        raise SkillError(f"Unsupported Skill transport: {settings['transport']}")
     return f"{settings['base_url']}{suffix}"
 
 
@@ -293,18 +289,7 @@ def call_provider(
         model_path = quote(settings["model"], safe=".-_~")
         return post_json(f"{base_url}/v1beta/models/{model_path}:generateContent", payload, api_key, settings["timeout"])
 
-    content: Any = prompt
-    if references:
-        content = [{"type": "text", "text": prompt}]
-        for reference in references:
-            encoded = base64.b64encode(reference["buffer"]).decode("ascii")
-            content.append({"type": "image_url", "image_url": {"url": f"data:{reference['mime_type']};base64,{encoded}"}})
-    payload = {
-        "model": settings["model"],
-        "messages": [{"role": "user", "content": content}],
-        "stream": False,
-    }
-    return post_json(f"{base_url}/v1/chat/completions", payload, api_key, settings["timeout"])
+    raise SkillError(f"Unsupported Skill transport: {settings['transport']}")
 
 
 def post_json(url: str, payload: Dict[str, Any], api_key: str, timeout: float) -> Dict[str, Any]:

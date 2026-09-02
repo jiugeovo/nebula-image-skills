@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build independently installable ZIP archives for the four Skills."""
+"""Build independently installable ZIP archives for the image Skills."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ SKILL_NAMES = (
     "nebula-image2-1k",
     "nebula-image2-4k",
     "nebula-nanobanana",
-    "nebula-grok",
 )
 REQUIRED_FILES = (
     "SKILL.md",
@@ -145,12 +144,22 @@ def write_checksums(output_root: Path, archives: List[Path]) -> Path:
     return path
 
 
+def remove_stale_archives(output_root: Path) -> None:
+    expected = {f"{skill_name}.zip" for skill_name in SKILL_NAMES}
+    for archive in sorted(output_root.glob("nebula-*.zip")):
+        if archive.name in expected:
+            continue
+        archive.unlink()
+        print(f"REMOVED {archive}")
+
+
 def main() -> int:
     args = parse_args()
     root = project_root()
     output_root = resolve_output(root, args.output)
     try:
         output_root.mkdir(parents=True, exist_ok=True)
+        remove_stale_archives(output_root)
         archives: List[Path] = []
         for skill_name in SKILL_NAMES:
             source = root / "skills" / skill_name

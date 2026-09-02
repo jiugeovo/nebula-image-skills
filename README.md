@@ -1,6 +1,6 @@
 # nebula-image-skills
 
-四个彼此独立的 APINebula 图像 Skill 包。每个 Skill 都可以单独安装、
+三个彼此独立的 APINebula 图像 Skill 包。每个 Skill 都可以单独安装、
 单独调用，不依赖本仓库的其他目录，也不需要 Node.js、数据库或额外的
 图像处理库。
 
@@ -11,7 +11,6 @@
 | `nebula-image2-1k` | `gpt-image-2-1k` | `gpt-image-2` | Image2 1K 生图和改图 |
 | `nebula-image2-4k` | `image2-4k` | `gpt-image-2-4k` | 固定 3840x2160 的 Image2 4K 生图和改图 |
 | `nebula-nanobanana` | `nanobanana` | `gemini-3.1-flash-image` | Gemini/Nano Banana，支持分辨率和比例 |
-| `nebula-grok` | `Grok` | `grok-imagine-image` | Grok Imagine 生图和改图 |
 
 默认请求根地址是 `https://img-api.apinebula.ai`。Adobe 分组不在本仓库中。
 
@@ -31,8 +30,7 @@ nebula-image-skills/
    │  ├─ agents/openai.yaml
    │  └─ scripts/{config.json,generate_image.py}
    ├─ nebula-image2-4k/
-   ├─ nebula-nanobanana/
-   └─ nebula-grok/
+   └─ nebula-nanobanana/
 ```
 
 每个目录都包含自己的说明、界面元数据、配置和标准库运行器。配置文件
@@ -62,8 +60,8 @@ Get-ChildItem -LiteralPath .\skills -Directory | ForEach-Object {
 }
 ```
 
-重启 Codex 后即可使用 `$nebula-image2-1k`、`$nebula-image2-4k`、
-`$nebula-nanobanana` 或 `$nebula-grok`。只复制一个目录也可以，不需要
+重启 Codex 后即可使用 `$nebula-image2-1k`、`$nebula-image2-4k` 或
+`$nebula-nanobanana`。只复制一个目录也可以，不需要
 安装其他 Skill。
 
 ### 从独立 ZIP 安装
@@ -179,18 +177,6 @@ python "$skill\scripts\generate_image.py" `
 可用模型、模型对应的分辨率和比例以该目录的 `scripts/config.json` 为准。
 可以用 `--model` 或 `APINEBULA_NANOBANANA_MODEL` 选择其他已配置模型。
 
-### Grok Imagine
-
-将目标比例直接写入提示词；该 Skill 不接受 Image2 或 Gemini 的输出控制
-参数：
-
-```powershell
-$skill = ".\skills\nebula-grok"
-python "$skill\scripts\generate_image.py" `
-  --prompt "cinematic anime coast, wide 16:9 composition, no text" `
-  --output .\grok.png
-```
-
 ## 结果与文件
 
 成功后，运行器会：
@@ -206,19 +192,19 @@ python "$skill\scripts\generate_image.py" `
 
 ## 校验与打包
 
-静态校验四个 Skill，并检查每个运行器的帮助命令：
+静态校验三个 Skill，并检查每个运行器的帮助命令：
 
 ```powershell
 python .\scripts\validate_skills.py
 ```
 
-运行本地 Mock 请求，验证四种协议、文件保存和像素检查：
+运行本地 Mock 请求，验证 Images/Gemini 协议、文件保存和像素检查：
 
 ```powershell
 python .\scripts\validate_skills.py --smoke
 ```
 
-打包四个独立 ZIP，并生成 SHA-256 清单：
+打包三个独立 ZIP，并生成 SHA-256 清单：
 
 ```powershell
 python .\scripts\package_skills.py
@@ -232,7 +218,6 @@ python .\scripts\package_skills.py
 nebula-image2-1k.zip
 nebula-image2-4k.zip
 nebula-nanobanana.zip
-nebula-grok.zip
 SHA256SUMS.txt
 ```
 

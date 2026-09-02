@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the four independent Skills without third-party dependencies."""
+"""Validate the independent image Skills without third-party dependencies."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ SKILL_NAMES = (
     "nebula-image2-1k",
     "nebula-image2-4k",
     "nebula-nanobanana",
-    "nebula-grok",
 )
 REQUIRED_FILES = (
     "SKILL.md",
@@ -43,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="Run local Mock requests through all three provider protocols",
+        help="Run local Mock requests through the Images and Gemini protocols",
     )
     parser.add_argument(
         "--json",
@@ -165,7 +164,7 @@ def validate_config(path: Path, skill_name: str) -> Dict[str, Any]:
         for model in models:
             if model not in mappings or not mappings[model]:
                 raise ValidationError(f"Missing resolution mapping for {model}: {path}")
-    elif transport != "chat":
+    else:
         raise ValidationError(f"Unsupported transport {transport}: {path}")
     return config
 
@@ -187,6 +186,23 @@ def run_checked(command: Sequence[str], cwd: Path, env: Optional[Dict[str, str]]
         detail = (completed.stderr or completed.stdout).strip().replace("\n", " ")
         raise ValidationError(f"Command failed ({completed.returncode}): {' '.join(command)}: {detail[:300]}")
     return completed.stdout
+
+
+def validate_skill_layout(root: Path) -> None:
+    skills_root = root / "skills"
+    if not skills_root.is_dir():
+        raise ValidationError(f"Missing Skills directory: {skills_root}")
+    actual = {path.name for path in skills_root.iterdir() if path.is_dir() and not path.name.startswith(".")}
+    expected = set(SKILL_NAMES)
+    unexpected = sorted(actual - expected)
+    missing = sorted(expected - actual)
+    if unexpected or missing:
+        details = []
+        if missing:
+            details.append(f"missing={missing}")
+        if unexpected:
+            details.append(f"unexpected={unexpected}")
+        raise ValidationError(f"Skill directory layout mismatch: {', '.join(details)}")
 
 
 def validate_skill(root: Path, skill_name: str) -> Dict[str, Any]:
@@ -230,7 +246,7 @@ def validate_skill(root: Path, skill_name: str) -> Dict[str, Any]:
 
 
 class SmokeHandler(BaseHTTPRequestHandler):
-    """Return protocol-shaped image responses without contacting a provider."""
+    """Return Images/Gemini-shaped responses without contacting a provider."""
 
     server_version = "nebula-image-skills-smoke/1.0"
 
@@ -253,11 +269,6 @@ class SmokeHandler(BaseHTTPRequestHandler):
             payload = {
                 "responseId": "smoke-gemini",
                 "candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": encoded}}]}}],
-            }
-        elif self.path.endswith("/v1/chat/completions"):
-            payload = {
-                "id": "smoke-chat",
-                "choices": [{"message": {"content": f"data:image/png;base64,{encoded}"}}],
             }
         else:
             self.send_error(404)
@@ -365,7 +376,6 @@ def run_smoke(root: Path) -> List[Dict[str, Any]]:
     required_paths = {
         "/v1/images/generations",
         "/v1/images/edits",
-        "/v1/chat/completions",
     }
     if not required_paths.issubset(set(paths)) or not any(":generateContent" in path for path in paths):
         raise ValidationError(f"Smoke server did not receive every protocol: {paths}")
@@ -377,6 +387,7 @@ def main() -> int:
     root = project_root()
     results: List[Dict[str, Any]] = []
     try:
+        validate_skill_layout(root)
         for skill_name in SKILL_NAMES:
             results.append(validate_skill(root, skill_name))
         if args.smoke:
