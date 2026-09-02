@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Standalone APINebula image skill runner.
-
-This file is copied into each model-group Skill package and reads the local
-config.json beside it. It uses only the Python standard library.
-"""
+"""Standalone APINebula runner used by each independent image Skill."""
 
 from __future__ import annotations
 
 import argparse
 import base64
 import binascii
-import datetime as dt
+import datetime as datetime_module
 import hashlib
 import ipaddress
 import json
@@ -21,76 +17,107 @@ import struct
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
+DEFAULT_BASE_URL = "https://img-api.apinebula.ai"
 MAX_INPUT_BYTES = 32 * 1024 * 1024
 MAX_OUTPUT_BYTES = 128 * 1024 * 1024
-DEFAULT_BASE_URL = "https://img-api.apinebula.ai"
-QUALITY_OPTIONS = {"auto", "low", "medium", "high"}
-RESOLUTION_OPTIONS = {"1K", "2K", "4K"}
+MAX_RESPONSE_BYTES = 256 * 1024 * 1024
+USER_AGENT = "apinebula-image-skill/2.1"
+IMAGE_DATA_URI = re.compile(r"^data:(image/[^;,]+);base64,(.+)$", re.IGNORECASE | re.DOTALL)
+SIZE_PATTERN = re.compile(r"^(\d+)x(\d+)$", re.IGNORECASE)
+
+
+class SkillError(RuntimeError):
+    """A user-facing error that does not expose credentials."""
 
 
 def main() -> int:
     config = load_config()
-    args = parse_args(config)
+    parser = build_parser(config)
+    args = parser.parse_args()
+    api_key = os.environ.get("APINEBULA_API_KEY", "").strip()
     try:
         prompt = read_prompt(args)
-        api_key = os.environ.get("APINEBULA_API_KEY", "").strip()
+        references = [load_reference(value, index) for index, value in enumerate(args.reference, 1)]
+        settings = resolve_settings(config, args, len(references))
+        if args.dry_run:
+            print(json.dumps(dry_run_summary(settings, prompt), ensure_ascii=False, indent=2))
+            return 0
         if not api_key:
             raise SkillError("APINEBULA_API_KEY is not configured.")
-
-        settings = resolve_settings(config, args)
-        references = [load_reference(value, index) for index, value in enumerate(args.reference or [], 1)]
         response = call_provider(config, settings, prompt, references, api_key)
-        result = save_result(config, settings, prompt, response, args)
+        result = save_result(config, settings, prompt, response, args, api_key)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except KeyboardInterrupt:
         print("Cancelled.", file=sys.stderr)
         return 130
     except SkillError as error:
-        print(f"Error: {error}", file=sys.stderr)
+        print(f"Error: {sanitize_message(str(error), api_key if 'api_key' in locals() else '')}", file=sys.stderr)
         return 1
-    except Exception as error:  # Keep unexpected failures concise and key-free.
-        print(f"Error: {error}", file=sys.stderr)
+    except Exception as error:  # Keep unexpected failures concise and credential-free.
+        print(f"Error: {sanitize_message(str(error), api_key if 'api_key' in locals() else '')}", file=sys.stderr)
         return 1
 
 
-class SkillError(RuntimeError):
-    """A user-facing, sanitized Skill error."""
-
-
-def load_config() -> dict:
+def load_config() -> Dict[str, Any]:
     config_path = Path(__file__).resolve().with_name("config.json")
     try:
-        return json.loads(config_path.read_text(encoding="utf-8"))
+        value = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise SkillError(f"Cannot read Skill config: {config_path}") from error
+    if not isinstance(value, dict):
+        raise SkillError("Skill config must be a JSON object.")
+    return value
 
 
-def parse_args(config: dict) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=f"Standalone {config['label']} APINebula runner")
-    parser.add_argument("--prompt", help="Image prompt")
-    parser.add_argument("--prompt-file", help="UTF-8 file containing the prompt")
-    parser.add_argument("--reference", action="append", default=[], help="Local image path or public image URL; repeatable")
-    parser.add_argument("--output", help="Output image path; numbered when multiple images are returned")
-    parser.add_argument("--output-dir", help="Output directory when --output is omitted")
-    parser.add_argument("--base-url", help="APINebula root URL; defaults to APINEBULA_BASE_URL")
+def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=f"Standalone {config['label']} runner")
+    parser.add_argument("--version", action="version", version=str(config.get("version", "2.0")))
+    prompts = parser.add_mutually_exclusive_group(required=True)
+    prompts.add_argument("--prompt", help="Image prompt")
+    prompts.add_argument("--prompt-file", help="UTF-8 text file containing the image prompt")
+    parser.add_argument(
+        "--reference",
+        action="append",
+        default=[],
+        metavar="PATH_OR_URL",
+        help="Local image path or public HTTP(S) image URL; repeat for edits",
+    )
+    parser.add_argument("--output", help="Output image path")
+    parser.add_argument("--output-dir", help="Directory used when --output is omitted")
+    parser.add_argument("--base-url", help="APINebula root URL; /v1 is removed if supplied")
     parser.add_argument("--timeout", type=float, help="Request timeout in seconds")
-    parser.add_argument("--n", type=int, help="Number of images for Image2 groups")
-    parser.add_argument("--size", help="Image2 size, for example 1024x1024")
-    parser.add_argument("--quality", choices=sorted(QUALITY_OPTIONS), help="Image2 quality")
-    parser.add_argument("--model", help="Gemini model override within the Nano Banana group")
-    parser.add_argument("--resolution", choices=sorted(RESOLUTION_OPTIONS), help="Gemini output resolution")
-    parser.add_argument("--aspect-ratio", dest="aspect_ratio", help="Gemini aspect ratio, for example 16:9")
-    args = parser.parse_args()
-    if bool(args.prompt) == bool(args.prompt_file):
-        parser.error("provide exactly one of --prompt or --prompt-file")
-    return args
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate inputs and print the request summary without calling APINebula",
+    )
+
+    transport = config["transport"]
+    if transport == "images":
+        parser.add_argument("--size", metavar="WIDTHxHEIGHT", help="Output size")
+        parser.add_argument(
+            "--quality",
+            choices=config["generation"].get("qualities", ["auto", "low", "medium", "high"]),
+            help="Image quality",
+        )
+        parser.add_argument("--n", type=int, help="Number of outputs")
+    elif transport == "gemini":
+        parser.add_argument("--model", choices=config["models"], help="Gemini image model")
+        resolutions = config.get("resolutions") or sorted(
+            {resolution for values in config.get("model_resolutions", {}).values() for resolution in values}
+        )
+        parser.add_argument("--resolution", choices=resolutions, help="Image resolution")
+        parser.add_argument("--aspect-ratio", dest="aspect_ratio", choices=config["aspect_ratios"], help="Image aspect ratio")
+    elif transport != "chat":
+        parser.error(f"Unsupported Skill transport: {transport}")
+    return parser
 
 
 def read_prompt(args: argparse.Namespace) -> str:
@@ -107,44 +134,49 @@ def read_prompt(args: argparse.Namespace) -> str:
     return prompt
 
 
-def resolve_settings(config: dict, args: argparse.Namespace) -> dict:
-    transport = config["transport"]
-    is_edit = bool(args.reference)
-    settings = {
-        "transport": transport,
-        "preset": config["preset"],
-        "group": config["group"],
-        "model": config["model"],
-        "is_edit": is_edit,
-        "timeout": args.timeout if args.timeout is not None else config["default_timeout_seconds"],
-        "base_url": normalize_base_url(args.base_url or os.environ.get("APINEBULA_BASE_URL", DEFAULT_BASE_URL)),
-    }
-    if settings["timeout"] <= 0:
+def resolve_settings(config: Dict[str, Any], args: argparse.Namespace, reference_count: int) -> Dict[str, Any]:
+    if reference_count > int(config.get("max_references", 8)):
+        raise SkillError(f"At most {config.get('max_references', 8)} reference images are supported.")
+    timeout = args.timeout if args.timeout is not None else float(config["default_timeout_seconds"])
+    if timeout <= 0:
         raise SkillError("--timeout must be positive.")
 
-    if transport == "images":
-        reject_args(args, ("resolution", "aspect_ratio", "model"), "Image2")
-        sizes = config["edit_sizes"] if is_edit else config["generate_sizes"]
-        size = args.size or config["default_size"]
-        if size not in sizes:
-            allowed = ", ".join(sizes)
+    settings: Dict[str, Any] = {
+        "transport": config["transport"],
+        "skill": config["name"],
+        "group": config["group"],
+        "model": config["model"],
+        "edit": reference_count > 0,
+        "reference_count": reference_count,
+        "timeout": timeout,
+        "base_url": normalize_base_url(
+            args.base_url or os.environ.get("APINEBULA_BASE_URL", config.get("endpoint", DEFAULT_BASE_URL))
+        ),
+    }
+
+    if config["transport"] == "images":
+        section = config["editing"] if reference_count else config["generation"]
+        size = normalize_size(args.size or section["default_size"])
+        if size not in section.get("sizes", []) and not is_custom_size_allowed(section, size):
+            allowed = ", ".join(section.get("sizes", []))
             raise SkillError(f"size={size} is not supported here; use {allowed}.")
-        quality = args.quality or config["default_quality"]
-        if quality not in QUALITY_OPTIONS:
-            raise SkillError(f"quality={quality} is not supported.")
+        quality = args.quality or section.get("default_quality", config["generation"].get("default_quality", "medium"))
+        qualities = set(section.get("qualities", config["generation"].get("qualities", [])))
+        if quality not in qualities:
+            raise SkillError(f"quality={quality} is not supported by this Skill.")
         count = args.n if args.n is not None else 1
-        if count < 1 or count > config["max_images"]:
-            raise SkillError(f"--n must be between 1 and {config['max_images']} for this Skill.")
+        max_images = int(config["max_images"])
+        if count < 1 or count > max_images:
+            raise SkillError(f"--n must be between 1 and {max_images} for this Skill.")
         settings.update({"size": size, "quality": quality, "count": count})
         return settings
 
-    if transport == "gemini":
-        reject_args(args, ("size", "quality", "n"), "Nano Banana")
-        model = args.model or os.environ.get("NEBULA_NANOBANANA_MODEL", config["model"])
+    if config["transport"] == "gemini":
+        model = args.model or os.environ.get(config.get("model_env", ""), config["model"])
         if model not in config["models"]:
-            raise SkillError(f"Model {model} is not supported by the Nano Banana group.")
+            raise SkillError(f"Model {model} is not supported by this Skill.")
         resolution = args.resolution or config["default_resolution"]
-        supported_resolutions = config["model_resolutions"].get(model, ["1K"])
+        supported_resolutions = config.get("model_resolutions", {}).get(model, ["1K"])
         if resolution not in supported_resolutions:
             raise SkillError(f"{model} supports only {', '.join(supported_resolutions)}.")
         aspect_ratio = args.aspect_ratio or config["default_aspect_ratio"]
@@ -153,27 +185,69 @@ def resolve_settings(config: dict, args: argparse.Namespace) -> dict:
         settings.update({"model": model, "resolution": resolution, "aspect_ratio": aspect_ratio, "count": 1})
         return settings
 
-    if transport == "chat":
-        reject_args(args, ("size", "quality", "n", "resolution", "aspect_ratio", "model"), "Grok")
+    if config["transport"] == "chat":
         settings["count"] = 1
         return settings
 
-    raise SkillError(f"Unsupported Skill transport: {transport}")
+    raise SkillError(f"Unsupported Skill transport: {config['transport']}")
 
 
-def reject_args(args: argparse.Namespace, names: tuple[str, ...], label: str) -> None:
-    for name in names:
-        value = getattr(args, name)
-        if value is not None:
-            cli_name = name.replace("_", "-")
-            raise SkillError(f"--{cli_name} is not supported by {label}.")
+def dry_run_summary(settings: Dict[str, Any], prompt: str) -> Dict[str, Any]:
+    """Expose validated intent without echoing the full prompt or credentials."""
+    summary: Dict[str, Any] = {
+        "status": "dry-run",
+        "skill": settings["skill"],
+        "group": settings["group"],
+        "model": settings["model"],
+        "transport": settings["transport"],
+        "endpoint": endpoint_for(settings),
+        "mode": "edit" if settings["edit"] else "generate",
+        "reference_count": settings["reference_count"],
+        "prompt_characters": len(prompt),
+    }
+    for key in ("size", "quality", "resolution", "aspect_ratio", "count", "timeout"):
+        if key in settings:
+            summary[key] = settings[key]
+    return summary
 
 
-def call_provider(config: dict, settings: dict, prompt: str, references: list[dict], api_key: str) -> dict:
+def endpoint_for(settings: Dict[str, Any]) -> str:
+    if settings["transport"] == "images":
+        suffix = "/v1/images/edits" if settings["edit"] else "/v1/images/generations"
+    elif settings["transport"] == "gemini":
+        suffix = f"/v1beta/models/{quote(settings['model'], safe='.-_~')}:generateContent"
+    else:
+        suffix = "/v1/chat/completions"
+    return f"{settings['base_url']}{suffix}"
+
+
+def normalize_size(value: str) -> str:
+    match = SIZE_PATTERN.fullmatch(value.strip())
+    if not match:
+        raise SkillError("--size must use WIDTHxHEIGHT, for example 1024x1024.")
+    return f"{int(match.group(1))}x{int(match.group(2))}"
+
+
+def is_custom_size_allowed(section: Dict[str, Any], size: str) -> bool:
+    if not section.get("allow_custom_size"):
+        return False
+    match = SIZE_PATTERN.fullmatch(size)
+    if not match:
+        return False
+    width, height = int(match.group(1)), int(match.group(2))
+    minimum = int(section.get("min_dimension", 1))
+    maximum = int(section.get("max_dimension", 100000))
+    max_pixels = int(section.get("max_pixels", maximum * maximum))
+    return minimum <= width <= maximum and minimum <= height <= maximum and width * height <= max_pixels
+
+
+def call_provider(
+    config: Dict[str, Any], settings: Dict[str, Any], prompt: str, references: List[Dict[str, Any]], api_key: str
+) -> Dict[str, Any]:
     base_url = settings["base_url"]
     if settings["transport"] == "images":
         if references:
-            fields = {
+            fields: Dict[str, str] = {
                 "model": settings["model"],
                 "prompt": prompt,
                 "size": settings["size"],
@@ -184,7 +258,7 @@ def call_provider(config: dict, settings: dict, prompt: str, references: list[di
             if settings["count"] > 1:
                 fields["n"] = str(settings["count"])
             return post_multipart(f"{base_url}/v1/images/edits", fields, references, api_key, settings["timeout"])
-        payload = {
+        payload: Dict[str, Any] = {
             "model": settings["model"],
             "prompt": prompt,
             "size": settings["size"],
@@ -196,9 +270,16 @@ def call_provider(config: dict, settings: dict, prompt: str, references: list[di
         return post_json(f"{base_url}/v1/images/generations", payload, api_key, settings["timeout"])
 
     if settings["transport"] == "gemini":
-        parts = [{"text": prompt}]
+        parts: List[Dict[str, Any]] = [{"text": prompt}]
         for reference in references:
-            parts.append({"inlineData": {"mimeType": reference["mime_type"], "data": base64.b64encode(reference["buffer"]).decode("ascii")}})
+            parts.append(
+                {
+                    "inlineData": {
+                        "mimeType": reference["mime_type"],
+                        "data": base64.b64encode(reference["buffer"]).decode("ascii"),
+                    }
+                }
+            )
         payload = {
             "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {
@@ -209,15 +290,15 @@ def call_provider(config: dict, settings: dict, prompt: str, references: list[di
                 },
             },
         }
-        path = f"{base_url}/v1beta/models/{quote_path(settings['model'])}:generateContent"
-        return post_json(path, payload, api_key, settings["timeout"])
+        model_path = quote(settings["model"], safe=".-_~")
+        return post_json(f"{base_url}/v1beta/models/{model_path}:generateContent", payload, api_key, settings["timeout"])
 
-    content: object = prompt
+    content: Any = prompt
     if references:
         content = [{"type": "text", "text": prompt}]
         for reference in references:
-            data_url = f"data:{reference['mime_type']};base64,{base64.b64encode(reference['buffer']).decode('ascii')}"
-            content.append({"type": "image_url", "image_url": {"url": data_url}})
+            encoded = base64.b64encode(reference["buffer"]).decode("ascii")
+            content.append({"type": "image_url", "image_url": {"url": f"data:{reference['mime_type']};base64,{encoded}"}})
     payload = {
         "model": settings["model"],
         "messages": [{"role": "user", "content": content}],
@@ -226,49 +307,64 @@ def call_provider(config: dict, settings: dict, prompt: str, references: list[di
     return post_json(f"{base_url}/v1/chat/completions", payload, api_key, settings["timeout"])
 
 
-def post_json(url: str, payload: dict, api_key: str, timeout: float) -> dict:
+def post_json(url: str, payload: Dict[str, Any], api_key: str, timeout: float) -> Dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
-    request = Request(url, data=body, method="POST", headers={
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept": "application/json",
-        "User-Agent": "jiuge-canva-skill/1.0",
-    })
-    return read_json_request(request, timeout)
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    return read_json_response(request, timeout)
 
 
-def post_multipart(url: str, fields: dict, references: list[dict], api_key: str, timeout: float) -> dict:
-    boundary = f"----JiugeCanva{uuid.uuid4().hex}"
-    chunks: list[bytes] = []
+def post_multipart(
+    url: str, fields: Dict[str, str], references: List[Dict[str, Any]], api_key: str, timeout: float
+) -> Dict[str, Any]:
+    boundary = f"----APINebulaSkill{uuid.uuid4().hex}"
+    chunks: List[bytes] = []
     for name, value in fields.items():
-        chunks.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode("utf-8"))
+        chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode("utf-8"))
     for index, reference in enumerate(references, 1):
-        filename = reference.get("filename") or f"reference-{index}{extension_for_mime(reference['mime_type'])}"
+        filename = safe_filename(reference.get("filename", ""), index, reference["mime_type"])
         chunks.append(
-            f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{filename}\"\r\n"
-            f"Content-Type: {reference['mime_type']}\r\n\r\n".encode("utf-8")
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{filename}"\r\n'
+            f'Content-Type: {reference["mime_type"]}\r\n\r\n'.encode("utf-8")
         )
-        chunks.append(reference["buffer"])
-        chunks.append(b"\r\n")
+        chunks.extend([reference["buffer"], b"\r\n"])
     chunks.append(f"--{boundary}--\r\n".encode("ascii"))
     body = b"".join(chunks)
-    request = Request(url, data=body, method="POST", headers={
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": f"multipart/form-data; boundary={boundary}",
-        "Content-Length": str(len(body)),
-        "Accept": "application/json",
-        "User-Agent": "jiuge-canva-skill/1.0",
-    })
-    return read_json_request(request, timeout)
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body)),
+            "Accept": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+    )
+    return read_json_response(request, timeout)
 
 
-def read_json_request(request: Request, timeout: float) -> dict:
+def read_json_response(request: Request, timeout: float) -> Dict[str, Any]:
     try:
         with urlopen(request, timeout=timeout) as response:
-            raw = response.read()
+            raw = read_limited(response, MAX_RESPONSE_BYTES)
+            header_request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
     except HTTPError as error:
-        detail = error.read(4096).decode("utf-8", "replace")
-        raise SkillError(f"APINebula HTTP {error.code}: {extract_error_message(detail)}") from error
+        detail = error.read(MAX_RESPONSE_BYTES).decode("utf-8", "replace")
+        message = extract_error_message(detail)
+        request_id = extract_request_id(detail)
+        suffix = f" (request id: {request_id})" if request_id else ""
+        raise SkillError(f"APINebula HTTP {error.code}: {message}{suffix}") from error
     except (URLError, TimeoutError, OSError) as error:
         raise SkillError(f"APINebula request failed: {error}") from error
     try:
@@ -277,14 +373,37 @@ def read_json_request(request: Request, timeout: float) -> dict:
         raise SkillError("APINebula returned a non-JSON response.") from error
     if not isinstance(value, dict):
         raise SkillError("APINebula returned an unexpected JSON shape.")
+    if header_request_id and not request_id_from(value):
+        value["_skill_request_id"] = header_request_id
     return value
 
 
-def load_reference(value: str, index: int) -> dict:
+def read_limited(response: Any, max_bytes: int) -> bytes:
+    content_length = response.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise SkillError(f"Response exceeds the {max_bytes // 1024 // 1024} MB limit.")
+        except ValueError:
+            pass
+    chunks: List[bytes] = []
+    total = 0
+    while True:
+        chunk = response.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise SkillError(f"Response exceeds the {max_bytes // 1024 // 1024} MB limit.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def load_reference(value: str, index: int) -> Dict[str, Any]:
     if value.lower().startswith(("http://", "https://")):
-        validate_reference_url(value)
-        buffer = fetch_bytes(value, MAX_INPUT_BYTES)
-        filename = Path(urlparse(value).path).name or f"reference-{index}.png"
+        validate_public_url(value)
+        buffer = fetch_bytes(value, MAX_INPUT_BYTES, validate_final_url=True)
+        filename = Path(urlsplit(value).path).name or f"reference-{index}.png"
     else:
         path = Path(value).expanduser()
         try:
@@ -298,17 +417,16 @@ def load_reference(value: str, index: int) -> dict:
     return {"buffer": buffer, "filename": filename, **inspection}
 
 
-def validate_reference_url(value: str) -> None:
-    parsed = urlparse(value)
+def validate_public_url(value: str) -> None:
+    parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or not parsed.hostname:
-        raise SkillError("Reference URL must be a public HTTP or HTTPS URL.")
-    hostname = parsed.hostname
+        raise SkillError("Image URL must be a public HTTP or HTTPS URL.")
     try:
-        addresses = {info[4][0] for info in socket.getaddrinfo(hostname, None)}
-    except socket.gaierror as error:
-        raise SkillError("Reference URL hostname could not be resolved.") from error
+        addresses = {info[4][0] for info in socket.getaddrinfo(parsed.hostname, parsed.port or None)}
+    except (socket.gaierror, OSError) as error:
+        raise SkillError("Image URL hostname could not be resolved.") from error
     if not addresses or any(is_private_address(address) for address in addresses):
-        raise SkillError("Reference URL must resolve to a public address.")
+        raise SkillError("Image URL must resolve to a public address.")
 
 
 def is_private_address(value: str) -> bool:
@@ -326,196 +444,289 @@ def is_private_address(value: str) -> bool:
     )
 
 
-def fetch_bytes(url: str, max_bytes: int) -> bytes:
-    request = Request(url, headers={"Accept": "image/*", "User-Agent": "jiuge-canva-skill/1.0"})
+def fetch_bytes(url: str, max_bytes: int, validate_final_url: bool = False) -> bytes:
+    request = Request(url, headers={"Accept": "image/*,application/octet-stream", "User-Agent": USER_AGENT})
     try:
-        with urlopen(request, timeout=120) as response:
-            chunks: list[bytes] = []
-            total = 0
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_bytes:
-                    raise SkillError(f"Image download exceeds the {max_bytes // 1024 // 1024} MB limit.")
-                chunks.append(chunk)
-            return b"".join(chunks)
+        with urlopen(request, timeout=180) as response:
+            if validate_final_url:
+                validate_public_url(response.geturl())
+            return read_limited(response, max_bytes)
     except HTTPError as error:
         raise SkillError(f"Image download failed: HTTP {error.code}.") from error
     except (URLError, TimeoutError, OSError) as error:
         raise SkillError(f"Image download failed: {error}") from error
 
 
-def save_result(config: dict, settings: dict, prompt: str, response: dict, args: argparse.Namespace) -> dict:
+def save_result(
+    config: Dict[str, Any],
+    settings: Dict[str, Any],
+    prompt: str,
+    response: Dict[str, Any],
+    args: argparse.Namespace,
+    api_key: str,
+) -> Dict[str, Any]:
     images = extract_images(response)
     if not images:
-        finish = response.get("candidates", [{}])[0].get("finishReason") if response.get("candidates") else None
+        finish = None
+        candidates = response.get("candidates")
+        if isinstance(candidates, list) and candidates and isinstance(candidates[0], dict):
+            finish = candidates[0].get("finishReason") or candidates[0].get("finish_reason")
         suffix = f" Finish reason: {finish}." if finish else ""
         raise SkillError(f"APINebula returned no usable image.{suffix}")
 
     base_output = resolve_output_base(args, config)
-    artifacts: list[dict] = []
+    artifacts: List[Dict[str, Any]] = []
+    failures: List[str] = []
     for index, image in enumerate(images):
-        buffer = image["buffer"] if image["kind"] == "inline" else fetch_bytes(image["url"], MAX_OUTPUT_BYTES)
-        if len(buffer) > MAX_OUTPUT_BYTES:
-            raise SkillError("Downloaded image exceeds the 128 MB limit.")
-        inspection = inspect_image(buffer)
+        try:
+            buffer = (
+                image["buffer"]
+                if image["kind"] == "inline"
+                else fetch_bytes(image["url"], MAX_OUTPUT_BYTES, True)
+            )
+            inspection = inspect_image(buffer)
+        except SkillError as error:
+            failures.append(str(error))
+            continue
         output_path = numbered_output_path(base_output, index, len(images), inspection["extension"])
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(buffer)
-        artifacts.append({
-            "path": str(output_path.resolve()),
-            "source": image.get("url", "inline"),
-            "mime_type": inspection["mime_type"],
-            "width": inspection["width"],
-            "height": inspection["height"],
-            "bytes": len(buffer),
-        })
+        atomic_write_bytes(output_path, buffer)
+        artifacts.append(
+            {
+                "path": str(output_path.resolve()),
+                "source": image.get("url", "inline"),
+                "mime_type": inspection["mime_type"],
+                "width": inspection["width"],
+                "height": inspection["height"],
+                "bytes": len(buffer),
+                "sha256": hashlib.sha256(buffer).hexdigest(),
+            }
+        )
+    if not artifacts:
+        detail = f" {failures[0]}" if failures else ""
+        raise SkillError(f"No returned image could be downloaded and inspected.{detail}")
 
     metadata_path = base_output.with_suffix(".json")
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata = redact_base64(response)
-    artifact_metadata = {
-        "skill": config["name"],
-        "preset": settings["preset"],
+    metadata = redact_response(response, api_key=api_key)
+    metadata["apinebula_skill"] = {
+        "name": config["name"],
         "group": settings["group"],
         "model": settings["model"],
-        "requested": request_summary(settings, prompt),
+        "requested": request_summary(settings, sanitize_message(prompt, api_key)),
         "artifacts": artifacts,
     }
-    metadata["jiuge_canva"] = artifact_metadata
-    metadata["nebula_canvas"] = artifact_metadata
-    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
+    if failures:
+        metadata["apinebula_skill"]["download_failures"] = failures
+    atomic_write_text(metadata_path, json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     return {
         "status": "completed",
         "skill": config["name"],
-        "preset": settings["preset"],
         "group": settings["group"],
         "model": settings["model"],
-        "request_id": response.get("id") or response.get("responseId"),
+        "request_id": request_id_from(response),
         "metadata_path": str(metadata_path.resolve()),
         "artifacts": artifacts,
+        **({"download_failures": failures} if failures else {}),
     }
 
 
-def request_summary(settings: dict, prompt: str) -> dict:
-    value = {"prompt": prompt, "edit": settings["is_edit"], "count": settings["count"]}
+def request_summary(settings: Dict[str, Any], prompt: str) -> Dict[str, Any]:
+    value: Dict[str, Any] = {
+        "prompt": prompt,
+        "edit": settings["edit"],
+        "reference_count": settings["reference_count"],
+        "count": settings["count"],
+    }
     for key in ("size", "quality", "resolution", "aspect_ratio"):
         if key in settings:
             value[key] = settings[key]
     return value
 
 
-def extract_images(response: dict) -> list[dict]:
-    images: list[dict] = []
+def extract_images(response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    images: List[Dict[str, Any]] = []
 
-    def add_inline(value: object, mime_type: object = "image/png") -> None:
+    def add_inline(value: Any, mime_type: Any = "image/png") -> None:
         if not isinstance(value, str) or not value:
             return
+        encoded = re.sub(r"\s+", "", value)
         try:
-            buffer = base64.b64decode(value, validate=True)
+            buffer = base64.b64decode(encoded, validate=True)
         except (ValueError, binascii.Error):
             return
-        if buffer:
+        if buffer and len(buffer) <= MAX_OUTPUT_BYTES:
             images.append({"kind": "inline", "buffer": buffer, "mime_type": str(mime_type or "image/png")})
 
-    def add_url(value: object) -> None:
-        if isinstance(value, str) and value.startswith(("http://", "https://")):
-            images.append({"kind": "url", "url": value.rstrip(".,\"'")})
+    def add_url(value: Any) -> None:
+        if not isinstance(value, str):
+            return
+        value = value.strip().rstrip(".,\"'")
+        data_match = IMAGE_DATA_URI.match(value)
+        if data_match:
+            add_inline(data_match.group(2), data_match.group(1))
+        elif value.startswith(("http://", "https://")):
+            images.append({"kind": "url", "url": value})
 
-    for item in response.get("data", []) if isinstance(response.get("data"), list) else []:
-        if isinstance(item, dict):
-            add_inline(item.get("b64_json"), item.get("mime_type", "image/png"))
-            add_url(item.get("url") or item.get("download_url") or item.get("image_url"))
-    for candidate in response.get("candidates", []) if isinstance(response.get("candidates"), list) else []:
-        for part in candidate.get("content", {}).get("parts", []) if isinstance(candidate, dict) else []:
-            if not isinstance(part, dict):
-                continue
-            inline = part.get("inlineData") or part.get("inline_data")
-            if isinstance(inline, dict):
-                add_inline(inline.get("data"), inline.get("mimeType") or inline.get("mime_type"))
-    for choice in response.get("choices", []) if isinstance(response.get("choices"), list) else []:
-        content = choice.get("message", {}).get("content") if isinstance(choice, dict) else None
-        if isinstance(content, str):
-            for match in re.findall(r"!\[[^\]]*\]\((https?://[^)\s]+)\)", content):
+    def walk(value: Any, key: str = "") -> None:
+        if isinstance(value, dict):
+            for name, item in value.items():
+                lower = name.lower()
+                if lower in {"b64_json", "base64", "base64_data"}:
+                    add_inline(item, value.get("mime_type") or value.get("mimeType") or "image/png")
+                elif lower in {"url", "download_url", "image_url", "uri", "file_uri"}:
+                    if isinstance(item, dict):
+                        walk(item, name)
+                    else:
+                        add_url(item)
+                elif lower in {"inline_data", "inlinedata"} and isinstance(item, dict):
+                    add_inline(item.get("data"), item.get("mimeType") or item.get("mime_type") or "image/png")
+                else:
+                    walk(item, name)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, key)
+        elif isinstance(value, str) and key in {"content", "text", "message"}:
+            for match in re.findall(r"!\[[^\]]*\]\((https?://[^)\s]+)", value):
                 add_url(match)
-            for match in re.findall(r"https?://[^\s)]+", content):
+            for match in re.findall(r"https?://[^\s)]+", value):
+                add_url(match)
+            for match in re.findall(r"data:image/[^\s)]+", value, re.IGNORECASE):
                 add_url(match)
 
-    unique: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    walk(response)
+    unique: List[Dict[str, Any]] = []
+    seen: set = set()
     for image in images:
-        digest = hashlib.sha256(image.get("buffer", b"")).hexdigest() if image["kind"] == "inline" else image.get("url")
-        key = (image["kind"], image.get("url") or digest)
-        if key not in seen:
-            seen.add(key)
+        if image["kind"] == "inline":
+            identity = ("inline", hashlib.sha256(image["buffer"]).hexdigest())
+        else:
+            identity = ("url", image["url"])
+        if identity not in seen:
+            seen.add(identity)
             unique.append(image)
-    inline = [item for item in unique if item["kind"] == "inline"]
-    return inline or [item for item in unique if item["kind"] == "url"]
+    inline = [image for image in unique if image["kind"] == "inline"]
+    return unique
 
 
-def redact_base64(value: object, key: str = "") -> object:
-    if isinstance(value, dict):
-        return {name: redact_base64(item, name) for name, item in value.items()}
-    if isinstance(value, list):
-        return [redact_base64(item, key) for item in value]
-    if key.lower() in {"b64_json", "data"} and isinstance(value, str) and len(value) > 128:
-        return "[omitted]"
-    return value
-
-
-def resolve_output_base(args: argparse.Namespace, config: dict) -> Path:
+def resolve_output_base(args: argparse.Namespace, config: Dict[str, Any]) -> Path:
     if args.output:
         path = Path(args.output).expanduser()
         return path if path.is_absolute() else Path.cwd() / path
-    directory = Path(
-        args.output_dir
-        or os.environ.get("APINEBULA_OUTPUT_DIR")
-        or os.environ.get("JIUGE_CANVA_OUTPUT_DIR")
-        or os.environ.get("NEBULA_CANVAS_OUTPUT_DIR")
-        or "./outputs"
-    ).expanduser()
+    directory = Path(args.output_dir or os.environ.get("APINEBULA_OUTPUT_DIR", "./outputs")).expanduser()
     if not directory.is_absolute():
         directory = Path.cwd() / directory
-    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return directory / f"{timestamp}-{config['preset']}"
+    timestamp = datetime_module.datetime.now(datetime_module.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return directory / f"{timestamp}-{config['name']}"
 
 
 def numbered_output_path(base: Path, index: int, total: int, extension: str) -> Path:
     if total == 1:
         return base.with_suffix(extension)
-    stem = base.stem + f"-{index + 1:02d}"
-    return base.with_name(stem + extension)
+    return base.with_name(f"{base.stem}-{index + 1:02d}{extension}")
+
+
+def atomic_write_bytes(path: Path, contents: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(contents)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def atomic_write_text(path: Path, contents: str) -> None:
+    atomic_write_bytes(path, contents.encode("utf-8"))
 
 
 def normalize_base_url(value: str) -> str:
-    base = value.strip().rstrip("/")
-    if not base.startswith(("http://", "https://")):
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or not parsed.hostname:
         raise SkillError("APINEBULA_BASE_URL must be an HTTP or HTTPS root URL.")
-    return base
+    if parsed.query or parsed.fragment:
+        raise SkillError("APINEBULA_BASE_URL must not contain a query or fragment.")
+    path = parsed.path.rstrip("/")
+    if path.lower().endswith("/v1"):
+        path = path[:-3].rstrip("/")
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")
 
 
-def quote_path(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._~-]", lambda match: f"%{ord(match.group(0)):02X}", value)
+def request_id_from(value: Any) -> Optional[str]:
+    if not isinstance(value, dict):
+        return None
+    for key in ("id", "request_id", "requestId", "responseId", "task_id", "taskId", "_skill_request_id"):
+        candidate = value.get(key)
+        if isinstance(candidate, (str, int)) and str(candidate):
+            return str(candidate)
+    return None
+
+
+def extract_request_id(raw: str) -> Optional[str]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        value = None
+    if isinstance(value, dict):
+        direct = request_id_from(value)
+        if direct:
+            return direct
+        error = value.get("error")
+        if isinstance(error, dict):
+            return request_id_from(error)
+    match = re.search(r"request\s*id\s*[:=]\s*([A-Za-z0-9_-]+)", raw, re.IGNORECASE)
+    return match.group(1) if match else None
 
 
 def extract_error_message(raw: str) -> str:
     try:
         value = json.loads(raw)
-        if isinstance(value, dict):
-            error = value.get("error")
-            if isinstance(error, dict) and error.get("message"):
-                return str(error["message"])[:500]
-            if value.get("message"):
-                return str(value["message"])[:500]
     except json.JSONDecodeError:
-        pass
-    return raw[:500].replace("\n", " ") or "request failed"
+        value = None
+    if isinstance(value, dict):
+        error = value.get("error")
+        if isinstance(error, dict):
+            for key in ("message", "detail", "code"):
+                if error.get(key):
+                    return sanitize_message(str(error[key]))[:500]
+        for key in ("message", "detail"):
+            if value.get(key):
+                return sanitize_message(str(value[key]))[:500]
+    return sanitize_message(raw[:500].replace("\n", " ")) or "request failed"
 
 
-def inspect_image(buffer: bytes) -> dict:
+def redact_response(value: Any, key: str = "", api_key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {
+            name: redact_response(item, name, api_key)
+            for name, item in value.items()
+            if name != "_skill_request_id"
+        }
+    if isinstance(value, list):
+        return [redact_response(item, key, api_key) for item in value]
+    if isinstance(value, str):
+        if key.lower() in {"b64_json", "base64", "base64_data", "data"} and len(value) > 128:
+            return "[omitted]"
+        return sanitize_message(value, api_key)
+    return value
+
+
+def sanitize_message(value: str, api_key: str = "") -> str:
+    result = value
+    if api_key:
+        result = result.replace(api_key, "[redacted]")
+    result = re.sub(r"Bearer\s+[A-Za-z0-9._~-]+", "Bearer [redacted]", result, flags=re.IGNORECASE)
+    result = re.sub(r"\bsk-[A-Za-z0-9]{20,}\b", "[redacted-key]", result)
+    return result
+
+
+def safe_filename(value: str, index: int, mime_type: str) -> str:
+    name = Path(value).name
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", name).strip("._")
+    if not name:
+        name = f"reference-{index}{extension_for_mime(mime_type)}"
+    return name[:120]
+
+
+def inspect_image(buffer: bytes) -> Dict[str, Any]:
     if buffer.startswith(b"\x89PNG\r\n\x1a\n") and len(buffer) >= 24:
         width, height = struct.unpack(">II", buffer[16:24])
         return image_info("image/png", ".png", width, height)
@@ -531,11 +742,13 @@ def inspect_image(buffer: bytes) -> dict:
     raise SkillError("Returned file is not a supported PNG, JPEG, WebP, or GIF image.")
 
 
-def image_info(mime_type: str, extension: str, width: Optional[int], height: Optional[int]) -> dict:
+def image_info(mime_type: str, extension: str, width: int, height: int) -> Dict[str, Any]:
+    if width <= 0 or height <= 0:
+        raise SkillError("Returned image has invalid dimensions.")
     return {"mime_type": mime_type, "extension": extension, "width": width, "height": height}
 
 
-def jpeg_dimensions(buffer: bytes) -> tuple[int, int]:
+def jpeg_dimensions(buffer: bytes) -> Tuple[int, int]:
     position = 2
     while position + 9 < len(buffer):
         if buffer[position] != 0xFF:
@@ -547,17 +760,17 @@ def jpeg_dimensions(buffer: bytes) -> tuple[int, int]:
             continue
         if position + 2 > len(buffer):
             break
-        length = struct.unpack(">H", buffer[position:position + 2])[0]
+        length = struct.unpack(">H", buffer[position : position + 2])[0]
         if length < 2 or position + length > len(buffer):
             break
         if marker in set(range(0xC0, 0xC4)) | set(range(0xC5, 0xC8)) | set(range(0xC9, 0xCC)) | set(range(0xCD, 0xD0)):
-            height, width = struct.unpack(">HH", buffer[position + 3:position + 7])
+            height, width = struct.unpack(">HH", buffer[position + 3 : position + 7])
             return width, height
         position += length
     raise SkillError("Returned JPEG has no readable dimensions.")
 
 
-def webp_dimensions(buffer: bytes) -> tuple[int, int]:
+def webp_dimensions(buffer: bytes) -> Tuple[int, int]:
     chunk = buffer[12:16]
     if chunk == b"VP8X" and len(buffer) >= 30:
         width = 1 + int.from_bytes(buffer[24:27], "little")
@@ -570,7 +783,7 @@ def webp_dimensions(buffer: bytes) -> tuple[int, int]:
         marker = b"\x9d\x01\x2a"
         position = buffer.find(marker, 20)
         if position >= 0 and position + 7 <= len(buffer):
-            width, height = struct.unpack("<HH", buffer[position + 3:position + 7])
+            width, height = struct.unpack("<HH", buffer[position + 3 : position + 7])
             return width & 0x3FFF, height & 0x3FFF
     raise SkillError("Returned WebP has no readable dimensions.")
 

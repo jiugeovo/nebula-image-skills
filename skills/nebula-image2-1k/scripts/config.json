@@ -1,14 +1,36 @@
 {
+  "version": "2.1",
   "name": "nebula-image2-1k",
   "label": "Nebula Image2 1K",
-  "preset": "image2",
   "group": "gpt-image-2-1k",
   "transport": "images",
+  "endpoint": "https://img-api.apinebula.ai",
   "model": "gpt-image-2",
-  "default_size": "1024x1024",
-  "generate_sizes": ["1024x1024"],
-  "edit_sizes": ["1024x1024", "1536x1024"],
-  "default_quality": "medium",
+  "default_timeout_seconds": 180,
+  "max_references": 8,
   "max_images": 1,
-  "default_timeout_seconds": 180
+  "generation": {
+    "default_size": "1024x1024",
+    "sizes": ["1024x1024"],
+    "default_quality": "medium",
+    "qualities": ["auto", "low", "medium", "high"]
+  },
+  "editing": {
+    "default_size": "1024x1024",
+    "sizes": [
+      "1024x1024",
+      "1024x1536",
+      "1536x1024",
+      "1536x864",
+      "864x1536",
+      "1365x1024",
+      "1024x1365"
+    ],
+    "allow_custom_size": true,
+    "min_dimension": 256,
+    "max_dimension": 2048,
+    "max_pixels": 4194304,
+    "default_quality": "high",
+    "qualities": ["auto", "low", "medium", "high"]
+  }
 }

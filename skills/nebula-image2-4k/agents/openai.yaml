@@ -1,6 +1,6 @@
 interface:
   display_name: "Nebula Image2 4K"
-  short_description: "Generate and edit fixed Image2 4K images"
-  default_prompt: "Use $nebula-image2-4k for fixed 3840x2160 APINebula Image2 generation or editing."
+  short_description: "Generate and edit fixed Image2 4K"
+  default_prompt: "Use $nebula-image2-4k to generate or edit a fixed 3840x2160 APINebula image."
 policy:
   allow_implicit_invocation: true

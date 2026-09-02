@@ -1,6 +1,6 @@
 interface:
   display_name: "Nebula Image2 1K"
-  short_description: "Generate and edit with Image2 1K"
-  default_prompt: "Use $nebula-image2-1k for APINebula Image2 1K generation or editing."
+  short_description: "Generate and edit APINebula Image2 1K"
+  default_prompt: "Use $nebula-image2-1k to generate or edit an APINebula Image2 1K image."
 policy:
   allow_implicit_invocation: true

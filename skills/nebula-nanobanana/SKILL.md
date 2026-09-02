@@ -1,61 +1,65 @@
 ---
 name: nebula-nanobanana
-description: Generate or edit images through APINebula's Nano Banana Gemini-native group. Use when the user mentions Nano Banana, Gemini image models, Gemini 3 Pro image preview, Gemini 3.1 Flash image, or 1K/2K/4K Gemini resolution and aspect ratio controls.
+description: Generate or edit images through APINebula's Gemini-native Nano Banana group. Use for Nano Banana, Gemini image, resolution, or aspect-ratio requests.
 ---
 
 # Nebula Nano Banana
 
-Use the dedicated `nanobanana` preset and Gemini-native `generateContent` protocol. Do not send this request through the Images API or Chat Completions transport.
+Use this Skill when the user asks for Nano Banana or a Gemini image model.
+Use the Gemini `generateContent` protocol defined by the runner; do not
+translate the request to an Images API or chat-completions request.
 
-## Fixed routing
+## Contract
 
-- Group: `nanobanana`
-- Default model: `gemini-3.1-flash-image`
-- Supported model families include Gemini 3.1 Flash image, its preview, Gemini 3 Pro image preview, and Gemini 2.5 Flash image.
-- Default endpoint root: `https://img-api.apinebula.ai`
+- Endpoint root: `https://img-api.apinebula.ai`.
+- Default model: `gemini-3.1-flash-image` in group `nanobanana`.
+- Supported models, model-specific resolutions, and aspect ratios are the
+  source of truth in `scripts/config.json`.
+- Use `--resolution 1K`, `2K`, or `4K` only when the selected model supports
+  it. The 2.5 Flash image models are restricted to `1K`.
+- Use `--aspect-ratio` for the configured ratios, including `1:1`, `2:3`,
+  `3:2`, `9:16`, `16:9`, and `21:9`.
+- Supplying one or more `--reference` values embeds the images in the Gemini
+  request and selects editing.
+- Do not pass Image2-only `--size`, `--quality`, or `--n` options.
 
-## Parameters
+## Invocation
 
-- Use `resolution=1K|2K|4K` and a documented `aspectRatio` such as `1:1`, `16:9`, or `9:16`.
-- Gemini 3.1 Flash image, its preview, and Gemini 3 Pro image preview support 1K, 2K, and 4K.
-- Gemini 2.5 Flash image and its preview support only 1K.
-- Do not pass `size`, `quality`, `responseFormat`, `inputFidelity`, or `n`.
-- The provider returns inline Base64 image data; the shared runtime saves it locally and removes the payload from metadata.
-- Verify actual dimensions from the saved file rather than assuming the requested resolution.
-
-## Use the runtime
-
-- Prefer MCP with `preset: "nanobanana"`, `resolution`, and `aspectRatio`.
-- For local edits, use `jiuge_canva_edit_image` with `imagePaths`.
-- For public URL edits, use `jiuge_canva_edit_image_async` with `imageUrls`; the async suffix is retained for compatibility with the existing workflow.
-- CLI generation example:
-
-```text
-jiuge-canva image generate --preset nanobanana --prompt "anime spring landscape" --resolution 2K --aspect-ratio 16:9
-```
-
-## Standalone package
-
-This Skill package is usable without installing `jiuge-canva` or any other
-model Skill. It includes a Python 3.9+ standard-library runner for the
-Gemini-native APINebula endpoint.
-
-Set `APINEBULA_API_KEY` in the process environment, then run from any folder:
+The package is self-contained and requires only Python 3.9+ standard-library
+modules. Read the key from the process environment and never put a real key
+in a prompt, source file, metadata file, or commit. Select another configured
+model with `--model` or `APINEBULA_NANOBANANA_MODEL`.
 
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-nanobanana"
+$env:APINEBULA_API_KEY = "<your-api-key>"
 python "$skill\scripts\generate_image.py" `
-  --prompt "anime spring landscape, no text or watermark" `
+  --prompt "an anime spring landscape above a sea of clouds, no text or watermark" `
   --resolution 2K `
   --aspect-ratio 16:9 `
-  --output .\nanime-landscape.png
+  --output .\anime-landscape.png
 ```
 
-Use `--model` for a supported Gemini image model. Gemini 2.5 Flash image
-models accept only `1K`; Gemini 3.1 Flash image and Gemini 3 Pro image
-preview accept `1K`, `2K`, and `4K`. Repeat `--reference` for local edits.
+For an edit, repeat `--reference` for each local image:
 
-## Security and results
+```powershell
+python "$skill\scripts\generate_image.py" `
+  --prompt "keep the original illustration and replace only the red food with flat manga-style stir-fried beef" `
+  --reference .\input.jpg `
+  --resolution 1K `
+  --aspect-ratio 1:1 `
+  --output .\edited.png
+```
 
-- Read the API key from the configured environment or Web connection settings. Never reveal or persist it.
-- Report the preset, group, model, request id, local path, and actual image inspection details. Do not expose inline Base64.
+Use `--prompt-file` for long prompts. `--base-url` and
+`APINEBULA_BASE_URL` accept an HTTP(S) root; a trailing `/v1` is normalized.
+Use `--dry-run` to validate the model, resolution, and ratio without making an
+API request.
+
+## Result handling
+
+The runner extracts inline image data, validates the saved file's signature
+and real dimensions, writes it atomically, and creates a redacted JSON
+sidecar. Report the Skill, group, model, request id when available, local path,
+MIME type, byte count, SHA-256, and actual width and height. Treat requested
+resolution and ratio as intent, not proof of the final pixels.

@@ -1,69 +1,62 @@
 ---
 name: nebula-image2-1k
-description: Generate or edit images with APINebula's gpt-image-2-1k group using gpt-image-2. Use when the user mentions Image2, gpt-image-2, image-2-1k, 1K Image2, or asks for Image2 quality and size controls.
+description: Generate or edit images with APINebula's gpt-image-2-1k group. Use for Image2 1K requests, quality selection, or Image2 edits.
 ---
 
 # Nebula Image2 1K
 
-Use the dedicated `image2` preset. Do not substitute another model group when a request is explicitly for Image2 1K.
+Use this Skill when the user explicitly asks for Image2 1K or the
+`gpt-image-2-1k` group. Keep the request on this group; do not silently move
+it to Gemini, Grok, or Image2 4K.
 
-## Fixed routing
+## Contract
 
-- Group: `gpt-image-2-1k`
-- Model: `gpt-image-2`
-- Transport: OpenAI-compatible Images API
-- Default endpoint root: `https://img-api.apinebula.ai`
+- Endpoint root: `https://img-api.apinebula.ai`.
+- Model: `gpt-image-2` in group `gpt-image-2-1k`.
+- Generation defaults to one `1024x1024` image.
+- Supplying one or more `--reference` values switches to the edit endpoint.
+  Edits default to `1024x1024` and accept the configured documented sizes plus
+  custom sizes from 256 to 2048 pixels per side, up to 4 megapixels.
+- `quality` accepts `auto`, `low`, `medium`, or `high`. Prefer `high` when
+  preserving a reference image is important.
+- The runner sends `input_fidelity=high` for edits and always inspects the
+  downloaded file. Treat actual saved dimensions as authoritative.
 
-## Parameters
+## Invocation
 
-- Generation uses `size=1024x1024`; local or URL edits may also use the documented `1536x1024` landscape size.
-- `quality` accepts `auto`, `low`, `medium`, or `high`.
-- Keep `n=1`; this group does not provide 2K or 4K output.
-- Use `inputFidelity=high` only for edits.
-- `responseFormat=url` or `b64_json` is valid for the Images transport.
-- Do not pass Gemini-only `resolution` or `aspectRatio` controls.
-- Do not infer final pixels from the request; report the saved-file inspection.
-
-## Use the runtime
-
-- Prefer MCP with `preset: "image2"` and `prompt`.
-- For local edits, use `jiuge_canva_edit_image` with `imagePaths`.
-- For public URL edits, use `jiuge_canva_edit_image_async` with `imageUrls`; the async suffix is retained for compatibility with the existing workflow.
-- CLI generation example:
-
-```text
-jiuge-canva image generate --preset image2 --prompt "clean anime landscape" --size 1024x1024 --quality high
-```
-
-## Standalone package
-
-This Skill package is usable without installing `jiuge-canva` or any other
-model Skill. It includes a Python 3.9+ standard-library runner for direct
-APINebula requests.
-
-Set `APINEBULA_API_KEY` in the process environment, then run from any folder:
+The package is self-contained and requires only Python 3.9+ standard-library
+modules. Read the key from the process environment and never place a real key
+in a prompt, source file, metadata file, or commit.
 
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-image2-1k"
+$env:APINEBULA_API_KEY = "<your-api-key>"
 python "$skill\scripts\generate_image.py" `
-  --prompt "clean anime landscape, no text or watermark" `
+  --prompt "a clean anime landscape after rain, no text or watermark" `
   --quality high `
   --output .\image2-1k.png
 ```
 
-For a local edit, repeat `--reference` for each input image:
+For an edit, repeat `--reference` for each local image:
 
 ```powershell
 python "$skill\scripts\generate_image.py" `
-  --prompt "keep the subject and replace the background with a pink sunset" `
-  --reference .\input.png `
+  --prompt "replace only the foreground tomatoes with manga-style stir-fried beef; preserve the rest" `
+  --reference .\input.jpg `
+  --size 1536x1024 `
+  --quality high `
   --output .\edited.png
 ```
 
-The standalone runner accepts `APINEBULA_BASE_URL` or `--base-url` as a root
-URL without `/v1`, downloads returned images, and reports actual dimensions.
+Use `--prompt-file` for long prompts. `--base-url` and
+`APINEBULA_BASE_URL` accept an HTTP(S) root; a trailing `/v1` is normalized.
+Use `--dry-run` to validate parameters and see the resolved endpoint without
+making an API request.
 
-## Security and results
+## Result handling
 
-- Read the API key from the configured environment or Web connection settings. Never reveal or persist it.
-- Report the preset, group, model, request id, remote URL, local path, and actual width, height, and MIME type when returned.
+The runner downloads URL results, validates PNG/JPEG/WebP/GIF signatures and
+dimensions, writes the image atomically, and creates a redacted JSON sidecar.
+Report the Skill, group, model, request id when available, local path, MIME
+type, byte count, SHA-256, and actual width and height. Do not infer final
+pixels from the requested `--size` or response metadata.

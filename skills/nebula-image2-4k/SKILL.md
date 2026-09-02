@@ -1,64 +1,62 @@
 ---
 name: nebula-image2-4k
-description: Generate or edit fixed 3840x2160 images with APINebula's image2-4k group using gpt-image-2-4k. Use when the user asks for Image2 4K, 3840x2160, or high-resolution Image2 output.
+description: Generate or edit fixed 3840x2160 images with APINebula's image2-4k group. Use for Image2 4K requests.
 ---
 
 # Nebula Image2 4K
 
-Use the dedicated `image2_4k` preset. This group is separate from Image2 1K and always requests a fixed 3840x2160 canvas.
+Use this Skill when the user asks for Image2 4K or the `image2-4k` group.
+Keep the request on the fixed 4K workflow and do not downgrade it to another
+model group.
 
-## Fixed routing
+## Contract
 
-- Group: `image2-4k`
-- Model: `gpt-image-2-4k`
-- Transport: OpenAI-compatible Images API
-- Default endpoint root: `https://img-api.apinebula.ai`
+- Endpoint root: `https://img-api.apinebula.ai`.
+- Model: `gpt-image-2-4k` in group `image2-4k`.
+- Every generation and edit requests `3840x2160` (`16:9`). The runner rejects
+  other sizes for this Skill.
+- `quality` accepts `auto`, `low`, `medium`, or `high`; `high` is the default.
+- `--n` accepts 1 through 10. Supplying `--reference` values selects editing;
+  edits send `input_fidelity=high`.
+- Large requests can take up to 30 minutes. Use a suitable `--timeout`.
+- Inspect the saved file and report its real pixels; request metadata is not
+  proof of the returned dimensions.
 
-## Parameters
+## Invocation
 
-- Always use `size=3840x2160`.
-- `quality` accepts `auto`, `low`, `medium`, or `high`.
-- `n` accepts `1` through `10`; Web batch count is separate and is bounded by the runtime.
-- Use `inputFidelity=high` only for edits.
-- `responseFormat=url` or `b64_json` is valid for the Images transport.
-- Do not pass Gemini-only `resolution` or `aspectRatio` controls.
-- Use a timeout up to `1800000` ms for slow requests.
-- Verify actual width, height, MIME type, and file size after download.
-
-## Use the runtime
-
-- Prefer MCP with `preset: "image2_4k"`, `size: "3840x2160"`, and `timeoutMs: 1800000`.
-- For local edits, use `jiuge_canva_edit_image` with `imagePaths`.
-- For public URL edits, use `jiuge_canva_edit_image_async` with `imageUrls`; the async suffix is retained for compatibility with the existing workflow.
-- CLI generation example:
-
-```text
-jiuge-canva image generate --preset image2_4k --prompt "wide anime mountain valley" --size 3840x2160 --quality high --timeout-ms 1800000
-```
-
-## Standalone package
-
-This Skill package is usable without installing `jiuge-canva` or any other
-model Skill. It includes a Python 3.9+ standard-library runner and always
-requests the fixed `3840x2160` canvas.
-
-Set `APINEBULA_API_KEY` in the process environment, then run from any folder:
+The package is self-contained and requires only Python 3.9+ standard-library
+modules. Read the key from the process environment and keep it out of prompts,
+logs, source files, metadata, and commits.
 
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-image2-4k"
+$env:APINEBULA_API_KEY = "<your-api-key>"
 python "$skill\scripts\generate_image.py" `
-  --prompt "wide anime mountain valley, no text or watermark" `
+  --prompt "wide anime mountain valley at sunrise, cinematic 16:9 composition, no text or watermark" `
   --quality high `
   --timeout 1800 `
   --output .\image2-4k.png
 ```
 
-Request multiple outputs with `--n 1` through `--n 10`. For a local edit,
-repeat `--reference` for each input image. The runner downloads results,
-checks the returned file signature, and reports actual width, height, MIME
-type, and byte size.
+For multiple outputs use `--n 1` through `--n 10`. For an edit, repeat
+`--reference` for each local image:
 
-## Security and results
+```powershell
+python "$skill\scripts\generate_image.py" `
+  --prompt "preserve the line art and characters; replace only the foreground dish with a manga-style dish" `
+  --reference .\input.png `
+  --quality high `
+  --timeout 1800 `
+  --output .\edited.png
+```
 
-- Read the API key from the configured environment or Web connection settings. Never reveal or persist it.
-- Report the preset, group, model, request id, remote URL, local path, and actual image inspection details.
+Use `--prompt-file` for long prompts. `--base-url` and
+`APINEBULA_BASE_URL` accept an HTTP(S) root; a trailing `/v1` is normalized.
+Use `--dry-run` to validate a large request without sending it.
+
+## Result handling
+
+The runner downloads each returned URL, validates the image signature and
+dimensions, writes files atomically, and creates a redacted JSON sidecar.
+Report the Skill, group, model, request id when available, every local path,
+MIME type, byte count, SHA-256, and actual width and height.
