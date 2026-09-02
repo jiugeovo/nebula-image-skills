@@ -1,4 +1,4 @@
-# jiuge-canva
+# nebula-image-skills
 
 四个彼此独立的 APINebula 图像 Skill 包。每个 Skill 都可以单独安装、
 单独调用，不依赖本仓库的其他目录，也不需要 Node.js、数据库或额外的
@@ -18,7 +18,7 @@
 ## 目录结构
 
 ```text
-jiuge-canva/
+nebula-image-skills/
 ├─ README.md
 ├─ LICENSE
 ├─ scripts/
@@ -50,8 +50,8 @@ jiuge-canva/
 ### 从 GitHub 安装全部 Skill
 
 ```powershell
-git clone https://github.com/jiugeovo/jiuge-canva.git
-Set-Location .\jiuge-canva
+git clone https://github.com/jiugeovo/nebula-image-skills.git
+Set-Location .\nebula-image-skills
 
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
 $skillRoot = Join-Path $codexHome "skills"

@@ -39,7 +39,7 @@ class ValidationError(RuntimeError):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate the jiuge-canva Skills.")
+    parser = argparse.ArgumentParser(description="Validate the nebula-image-skills packages.")
     parser.add_argument(
         "--smoke",
         action="store_true",
@@ -232,7 +232,7 @@ def validate_skill(root: Path, skill_name: str) -> Dict[str, Any]:
 class SmokeHandler(BaseHTTPRequestHandler):
     """Return protocol-shaped image responses without contacting a provider."""
 
-    server_version = "jiuge-canva-smoke/1.0"
+    server_version = "nebula-image-skills-smoke/1.0"
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -280,7 +280,7 @@ def run_smoke(root: Path) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     try:
         base_url = f"http://127.0.0.1:{server.server_address[1]}"
-        with tempfile.TemporaryDirectory(prefix="jiuge-canva-smoke-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="nebula-image-skills-smoke-") as temporary:
             output_root = Path(temporary)
             for skill_name in SKILL_NAMES:
                 script = root / "skills" / skill_name / "scripts" / "generate_image.py"

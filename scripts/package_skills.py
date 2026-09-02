@@ -33,7 +33,7 @@ class PackageError(RuntimeError):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Package the independent jiuge-canva Skills.")
+    parser = argparse.ArgumentParser(description="Package the independent nebula-image-skills.")
     parser.add_argument(
         "--output",
         help="Output directory for archives (default: <project>/dist/skills)",
