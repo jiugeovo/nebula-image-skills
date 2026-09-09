@@ -8,7 +8,7 @@
 
 | Skill | APINebula 分组 | 模型 | 适用场景 |
 | --- | --- | --- | --- |
-| `nebula-image2-1k` | `gpt-image-2-1k` | `gpt-image-2` | Image2 1K 生图和改图 |
+| `nebula-image2-1k` | `gpt-image-2-1k` | `gpt-image-2.5` | Image2 1K 生图和改图 |
 | `nebula-image2-4k` | `image2-4k` | `gpt-image-2-4k` | 固定 3840x2160 的 Image2 4K 生图和改图 |
 | `nebula-nanobanana` | `nanobanana` | `gemini-3.1-flash-image` | Gemini/Nano Banana，支持分辨率和比例 |
 

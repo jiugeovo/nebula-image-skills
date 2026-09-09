@@ -12,7 +12,7 @@ it to Gemini or Image2 4K.
 ## Contract
 
 - Endpoint root: `https://img-api.apinebula.ai`.
-- Model: `gpt-image-2` in group `gpt-image-2-1k`.
+- Model: `gpt-image-2.5` in group `gpt-image-2-1k`.
 - Generation defaults to one `1024x1024` image.
 - Supplying one or more `--reference` values switches to the edit endpoint.
   Edits default to `1024x1024` and accept the configured documented sizes plus
