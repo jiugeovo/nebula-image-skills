@@ -132,9 +132,10 @@ python <skill>\scripts\generate_image.py `
   --output .\result.png
 ```
 
-### Image2 1K
+### Image2 1K (`gpt-image-2.5`)
 
-生成默认是 `1024x1024`，质量可选 `auto`、`low`、`medium`、`high`。改图
+`nebula-image2-1k` 使用 APINebula 的 `gpt-image-2-1k` 分组，实际请求模型为
+`gpt-image-2.5`。生成默认是 `1024x1024`，质量可选 `auto`、`low`、`medium`、`high`。改图
 可以用 `--size WIDTHxHEIGHT`，配置允许的尺寸以及自定义上限为单边
 256 到 2048 像素、总像素不超过 4MP：
 
