@@ -1,6 +1,6 @@
 interface:
   display_name: "Nebula Nano Banana"
-  short_description: "Generate and edit Gemini image outputs"
-  default_prompt: "Use $nebula-nanobanana to generate or edit an APINebula Gemini image."
+  short_description: "Create Gemini image variants with custom ratios"
+  default_prompt: "Use $nebula-nanobanana to create a 16:9 illustration at 2K resolution."
 policy:
   allow_implicit_invocation: true

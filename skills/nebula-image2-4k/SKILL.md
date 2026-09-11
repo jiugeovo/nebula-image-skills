@@ -1,6 +1,6 @@
 ---
 name: nebula-image2-4k
-description: Generate or edit fixed 3840x2160 images with APINebula's image2-4k group. Use for Image2 4K requests.
+description: Generate or edit images through APINebula's Image2 4K group. Use for 16:9 landscapes, wallpapers, and artwork revisions with gpt-image-2-4k, gpt-image-2.5-flare, gpt-image-2.5-sunburst, or another compatible model.
 ---
 
 # Nebula Image2 4K
@@ -12,9 +12,19 @@ model group.
 ## Contract
 
 - Endpoint root: `https://img-api.apinebula.ai`.
-- Model: `gpt-image-2-4k` in group `image2-4k`.
+- Default model: `gpt-image-2-4k` in group `image2-4k`.
+- Override the model per request with `--model` or the
+  `APINEBULA_IMAGE2_4K_MODEL` environment variable. Precedence is `--model`,
+  then the environment variable, then `model` in `scripts/config.json`.
+  Empty or whitespace-only values are skipped. Pass a user-specified model
+  through `--model`; otherwise let the runner resolve the environment/default.
+- Known model names are `gpt-image-2-4k`, `gpt-image-2.5-flare`, and
+  `gpt-image-2.5-sunburst`. The `available_models` list in `scripts/config.json`
+  is informational, not an allowlist. Other compatible names are accepted.
+  Selecting a model does not change the API key's group permissions.
 - Every generation and edit requests `3840x2160` (`16:9`). The runner rejects
-  other sizes for this Skill.
+  other sizes for this Skill. An override must support the Images API and
+  the selected size, quality, and reference-image parameters.
 - `quality` accepts `auto`, `low`, `medium`, or `high`; `high` is the default.
 - `--n` accepts 1 through 10. Supplying `--reference` values selects editing;
   edits send `input_fidelity=high`.
@@ -38,6 +48,18 @@ python "$skill\scripts\generate_image.py" `
   --output .\image2-4k.png
 ```
 
+To select Flare for one request (or replace its name with
+`gpt-image-2.5-sunburst` to select Sunburst):
+
+```powershell
+python "$skill\scripts\generate_image.py" `
+  --model "gpt-image-2.5-flare" `
+  --prompt "wide anime mountain valley at sunrise, cinematic 16:9 composition, no text or watermark" `
+  --quality high `
+  --timeout 1800 `
+  --output .\image2-4k-custom-model.png
+```
+
 For multiple outputs use `--n 1` through `--n 10`. For an edit, repeat
 `--reference` for each local image:
 
@@ -53,6 +75,7 @@ python "$skill\scripts\generate_image.py" `
 Use `--prompt-file` for long prompts. `--base-url` and
 `APINEBULA_BASE_URL` accept an HTTP(S) root; a trailing `/v1` is normalized.
 Use `--dry-run` to validate a large request without sending it.
+It reports the selected model but does not check live model availability.
 
 ## Result handling
 

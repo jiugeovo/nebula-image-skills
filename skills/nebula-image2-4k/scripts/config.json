@@ -6,6 +6,8 @@
   "transport": "images",
   "endpoint": "https://img-api.apinebula.ai",
   "model": "gpt-image-2-4k",
+  "model_env": "APINEBULA_IMAGE2_4K_MODEL",
+  "available_models": ["gpt-image-2-4k", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"],
   "default_timeout_seconds": 1800,
   "max_references": 8,
   "max_images": 10,

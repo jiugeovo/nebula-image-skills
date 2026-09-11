@@ -137,6 +137,10 @@ def validate_config(path: Path, skill_name: str) -> Dict[str, Any]:
         raise ValidationError(f"Missing config keys {missing}: {path}")
     if config["name"] != skill_name:
         raise ValidationError(f"Config name does not match directory: {path}")
+    if not isinstance(config["model"], str) or not config["model"].strip():
+        raise ValidationError(f"Default model must be a non-empty string: {path}")
+    if "model_env" in config and (not isinstance(config["model_env"], str) or not config["model_env"].strip()):
+        raise ValidationError(f"model_env must be a non-empty string: {path}")
     if not str(config["version"]).startswith("2."):
         raise ValidationError(f"Unexpected config version: {path}")
     endpoint = urlsplit(str(config["endpoint"]))
@@ -205,6 +209,10 @@ def validate_skill_layout(root: Path) -> None:
         raise ValidationError(f"Skill directory layout mismatch: {', '.join(details)}")
 
 
+def validation_environment() -> Dict[str, str]:
+    return {key: value for key, value in os.environ.items() if not key.startswith("APINEBULA_")}
+
+
 def validate_skill(root: Path, skill_name: str) -> Dict[str, Any]:
     skill_root = root / "skills" / skill_name
     for relative in REQUIRED_FILES:
@@ -223,8 +231,7 @@ def validate_skill(root: Path, skill_name: str) -> Dict[str, Any]:
     except SyntaxError as error:
         raise ValidationError(f"Python syntax error in {script}: {error}") from error
 
-    env = os.environ.copy()
-    env.pop("APINEBULA_API_KEY", None)
+    env = validation_environment()
     run_checked([sys.executable, str(script), "--help"], root, env=env)
     dry_run_output = run_checked(
         [sys.executable, str(script), "--prompt", "validation prompt", "--dry-run"],
@@ -237,6 +244,8 @@ def validate_skill(root: Path, skill_name: str) -> Dict[str, Any]:
         raise ValidationError(f"Dry-run did not return JSON: {script}") from error
     if dry_run.get("status") != "dry-run" or dry_run.get("skill") != skill_name:
         raise ValidationError(f"Unexpected dry-run result: {script}")
+    if dry_run.get("model") != config["model"]:
+        raise ValidationError(f"Dry-run did not select the default model: {script}")
     return {
         "name": skill_name,
         "transport": config["transport"],
@@ -309,7 +318,7 @@ def run_smoke(root: Path) -> List[Dict[str, Any]]:
                     command += ["--quality", "low"]
                 elif skill_name == "nebula-nanobanana":
                     command += ["--resolution", "1K", "--aspect-ratio", "1:1"]
-                environment = os.environ.copy()
+                environment = validation_environment()
                 environment["APINEBULA_API_KEY"] = "smoke-key"
                 completed = subprocess.run(
                     command,
@@ -340,7 +349,7 @@ def run_smoke(root: Path) -> List[Dict[str, Any]]:
             reference.write_bytes(PNG_BYTES)
             edit_script = root / "skills" / "nebula-image2-1k" / "scripts" / "generate_image.py"
             edit_output = output_root / "edit.png"
-            environment = os.environ.copy()
+            environment = validation_environment()
             environment["APINEBULA_API_KEY"] = "smoke-key"
             completed = subprocess.run(
                 [

@@ -1,6 +1,6 @@
 ---
 name: nebula-image2-1k
-description: Generate or edit images with APINebula's gpt-image-2-1k group. Use for Image2 1K requests, quality selection, or Image2 edits.
+description: Generate or edit images through APINebula's Image2 1K group. Use for Image2 1K concept art, illustrations, composition variants, and reference-image edits, with an optional model override.
 ---
 
 # Nebula Image2 1K
@@ -12,7 +12,14 @@ it to Gemini or Image2 4K.
 ## Contract
 
 - Endpoint root: `https://img-api.apinebula.ai`.
-- Model: `gpt-image-2.5` in group `gpt-image-2-1k`.
+- Default model: `gpt-image-2.5` in group `gpt-image-2-1k`.
+- Override the model per request with `--model` or the
+  `APINEBULA_IMAGE2_1K_MODEL` environment variable. Precedence is `--model`,
+  then the environment variable, then `model` in `scripts/config.json`.
+  Empty or whitespace-only values are skipped. Pass a user-specified model
+  through `--model`; otherwise let the runner resolve the environment/default.
+  Other model names must support the Images API and this Skill's parameters.
+  Selecting a model does not change the API key's group permissions.
 - Generation defaults to one `1024x1024` image.
 - Supplying one or more `--reference` values switches to the edit endpoint.
   Edits default to `1024x1024` and accept the configured documented sizes plus
@@ -35,6 +42,15 @@ python "$skill\scripts\generate_image.py" `
   --prompt "a clean anime landscape after rain, no text or watermark" `
   --quality high `
   --output .\image2-1k.png
+```
+
+To use another model accepted by the same group:
+
+```powershell
+python "$skill\scripts\generate_image.py" `
+  --model "your-model-name" `
+  --prompt "a clean anime landscape after rain, no text or watermark" `
+  --output .\image2-1k-custom-model.png
 ```
 
 For an edit, repeat `--reference` for each local image:

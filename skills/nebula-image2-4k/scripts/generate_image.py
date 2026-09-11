@@ -101,6 +101,7 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
 
     transport = config["transport"]
     if transport == "images":
+        parser.add_argument("--model", help="Image model; defaults to the configured model")
         parser.add_argument("--size", metavar="WIDTHxHEIGHT", help="Output size")
         parser.add_argument(
             "--quality",
@@ -109,7 +110,7 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         )
         parser.add_argument("--n", type=int, help="Number of outputs")
     elif transport == "gemini":
-        parser.add_argument("--model", choices=config["models"], help="Gemini image model")
+        parser.add_argument("--model", type=str.strip, choices=config["models"], help="Gemini image model")
         resolutions = config.get("resolutions") or sorted(
             {resolution for values in config.get("model_resolutions", {}).values() for resolution in values}
         )
@@ -141,11 +142,17 @@ def resolve_settings(config: Dict[str, Any], args: argparse.Namespace, reference
     if timeout <= 0:
         raise SkillError("--timeout must be positive.")
 
+    model_env = str(config.get("model_env", "")).strip()
+    env_model = os.environ.get(model_env, "").strip() if model_env else ""
+    selected_model = (args.model or "").strip() or env_model or str(config["model"]).strip()
+    if not selected_model:
+        raise SkillError("No image model is configured.")
+
     settings: Dict[str, Any] = {
         "transport": config["transport"],
         "skill": config["name"],
         "group": config["group"],
-        "model": config["model"],
+        "model": selected_model,
         "edit": reference_count > 0,
         "reference_count": reference_count,
         "timeout": timeout,
@@ -172,7 +179,7 @@ def resolve_settings(config: Dict[str, Any], args: argparse.Namespace, reference
         return settings
 
     if config["transport"] == "gemini":
-        model = args.model or os.environ.get(config.get("model_env", ""), config["model"])
+        model = selected_model
         if model not in config["models"]:
             raise SkillError(f"Model {model} is not supported by this Skill.")
         resolution = args.resolution or config["default_resolution"]

@@ -1,6 +1,6 @@
 ---
 name: nebula-nanobanana
-description: Generate or edit images through APINebula's Gemini-native Nano Banana group. Use for Nano Banana, Gemini image, resolution, or aspect-ratio requests.
+description: Generate or edit images through APINebula's Gemini-native Nano Banana group. Use for Gemini/Nano Banana illustrations, reference-image revisions, and image variants at configurable resolutions and aspect ratios.
 ---
 
 # Nebula Nano Banana
@@ -29,6 +29,10 @@ The package is self-contained and requires only Python 3.9+ standard-library
 modules. Read the key from the process environment and never put a real key
 in a prompt, source file, metadata file, or commit. Select another configured
 model with `--model` or `APINEBULA_NANOBANANA_MODEL`.
+The command-line option takes priority, followed by the environment variable,
+then `model` in `scripts/config.json`. An unset, empty, or whitespace-only
+environment variable falls back to the default. Pass a user-specified model
+through `--model`; otherwise let the runner resolve the environment/default.
 
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-nanobanana"

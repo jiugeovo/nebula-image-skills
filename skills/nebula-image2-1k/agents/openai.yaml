@@ -1,6 +1,6 @@
 interface:
   display_name: "Nebula Image2 1K"
-  short_description: "Generate and edit APINebula Image2 1K"
-  default_prompt: "Use $nebula-image2-1k to generate or edit an APINebula Image2 1K image."
+  short_description: "Create Image2 1K concept art and reference edits"
+  default_prompt: "Use $nebula-image2-1k to create an anime concept illustration."
 policy:
   allow_implicit_invocation: true
