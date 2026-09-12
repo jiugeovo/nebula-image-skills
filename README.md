@@ -1,8 +1,8 @@
 # nebula-image-skills
 
 三个彼此独立的 APINebula 图像 Skill 包。每个 Skill 都可以单独安装、
-单独调用，不依赖本仓库的其他目录，也不需要 Node.js、数据库或额外的
-图像处理库。
+单独调用，不依赖本仓库的其他目录、Node.js、数据库或额外的图像处理库。
+每个包都带有 `run.ps1` 启动器，会自动寻找 Codex bundled Python 或系统 Python。
 
 ## 包含的 Skill
 
@@ -30,18 +30,19 @@ nebula-image-skills/
    ├─ nebula-image2-1k/
    │  ├─ SKILL.md
    │  ├─ agents/openai.yaml
+   │  ├─ run.ps1
    │  └─ scripts/{config.json,generate_image.py}
    ├─ nebula-image2-4k/
    └─ nebula-nanobanana/
 ```
 
-每个目录都包含自己的说明、界面元数据、配置和标准库运行器。配置文件
+每个目录都包含自己的说明、界面元数据、启动器、配置和标准库运行器。配置文件
 定义默认值和本地参数校验规则，实际可调用的模型及参数由服务端和 Key 权限决定。
 
 ## 环境要求
 
 - Codex，用于发现和调用 Skill。
-- Python 3.9 或更高版本。
+- Codex Desktop，或 Windows 上的 Python 3.9+ / `py` 启动器（独立终端运行时）。
 - 一个有对应分组权限的 APINebula API Key。
 - 不需要安装第三方 Python 包；运行器只使用 Python 标准库。
 
@@ -85,6 +86,23 @@ Expand-Archive -LiteralPath .\dist\skills\nebula-image2-4k.zip -DestinationPath 
 
 ZIP 内已经包含完整的 Skill 目录名，解压后可以直接被 Codex 发现。
 
+### Python 自动探测
+
+推荐通过 Skill 目录中的 `run.ps1` 启动器运行：
+
+```powershell
+$skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-image2-4k"
+& "$skill\run.ps1" `
+  --prompt "wide anime mountain valley at sunrise, no text or watermark" `
+  --quality high `
+  --output .\image2-4k.png
+```
+
+启动器按以下顺序查找 Python：Codex bundled Python、PATH 中的 `python`、
+PATH 中的 Windows `py`。在 Codex Desktop 中通常不需要额外安装 Python；
+普通终端若没有 Codex bundled Python，则需要 Python 3.9+ 或 Python Launcher。
+启动器不会下载 Python，也不会修改系统 PATH，只负责选择解释器并透传参数。
+
 ## 配置
 
 建议只在当前 PowerShell 进程中设置 Key：
@@ -99,7 +117,7 @@ $env:APINEBULA_OUTPUT_DIR = (Join-Path (Get-Location) "outputs")
 
 ```powershell
 $env:APINEBULA_API_KEY = "<your-api-key>"
-python .\skills\nebula-image2-1k\scripts\generate_image.py `
+& .\skills\nebula-image2-1k\run.ps1 `
   --prompt "anime landscape, no text or watermark" `
   --output .\image.png
 ```
@@ -139,7 +157,7 @@ Image2 的 `--model` 为空或只有空格时也会跳过；模型名两端的�
 
 ```powershell
 $skill = ".\skills\nebula-image2-4k"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --model "gpt-image-2.5-flare" `
   --prompt "wide anime mountain valley at sunrise, no text or watermark" `
   --dry-run
@@ -152,7 +170,7 @@ python "$skill\scripts\generate_image.py" `
 ```powershell
 $env:APINEBULA_IMAGE2_4K_MODEL = "gpt-image-2.5-sunburst"
 # 后续不传 --model 的 4K 请求都会选用 Sunburst。
-python "$skill\scripts\generate_image.py" --prompt "anime landscape" --dry-run
+& "$skill\run.ps1" --prompt "anime landscape" --dry-run
 ```
 
 恢复默认模型时清除环境变量，并省略 `--model`：
@@ -178,7 +196,7 @@ Remove-Item Env:APINEBULA_IMAGE2_4K_MODEL -ErrorAction SilentlyContinue
 所有 Skill 使用同一个调用形式：
 
 ```powershell
-python <skill>\scripts\generate_image.py `
+& <skill>\run.ps1 `
   --prompt "<prompt>" `
   [Skill 专属参数] `
   [--reference <本地图片或公网图片 URL>] `
@@ -189,7 +207,7 @@ python <skill>\scripts\generate_image.py `
 请求。长提示词可以放进 UTF-8 文件：
 
 ```powershell
-python <skill>\scripts\generate_image.py `
+& <skill>\run.ps1 `
   --prompt-file .\prompt.txt `
   --output .\result.png
 ```
@@ -204,7 +222,7 @@ python <skill>\scripts\generate_image.py `
 
 ```powershell
 $skill = ".\skills\nebula-image2-1k"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "anime city after rain, clean composition, no text" `
   --quality high `
   --output .\image2-1k.png
@@ -219,7 +237,7 @@ python "$skill\scripts\generate_image.py" `
 
 ```powershell
 $skill = ".\skills\nebula-image2-4k"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "wide anime mountain valley at sunrise, 16:9, no text" `
   --quality high `
   --n 2 `
@@ -233,7 +251,7 @@ python "$skill\scripts\generate_image.py" `
 
 ```powershell
 $skill = ".\skills\nebula-nanobanana"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "soft pink anime garden, no text or watermark" `
   --resolution 2K `
   --aspect-ratio 16:9 `
@@ -247,7 +265,8 @@ python "$skill\scripts\generate_image.py" `
 
 这里使用的是“配置覆盖”和“默认值回退”：`argparse` 解析命令行中的 `--model`，
 `os.environ.get` 读取当前 Skill 配置的环境变量，`config.json` 保存默认值。
-核心逻辑在每个 Skill 的 `scripts/generate_image.py` 的 `resolve_settings` 中：
+核心模型选择逻辑在每个 Skill 的 `scripts/generate_image.py` 的 `resolve_settings` 中；
+Python 解释器选择逻辑在每个 Skill 的 `run.ps1` 中：
 
 ```python
 model_env = str(config.get("model_env", "")).strip()

@@ -22,6 +22,7 @@ REQUIRED_FILES = (
     "agents/openai.yaml",
     "scripts/config.json",
     "scripts/generate_image.py",
+    "run.ps1",
 )
 EXCLUDED_PARTS = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".tmp", ".log"}

@@ -34,14 +34,15 @@ model group.
 
 ## Invocation
 
-The package is self-contained and requires only Python 3.9+ standard-library
-modules. Read the key from the process environment and keep it out of prompts,
+The package is self-contained and requires only Python standard-library
+modules. Prefer `run.ps1`; it finds Codex bundled Python, then `python`, then
+the Windows `py` launcher. Read the key from the process environment and keep it out of prompts,
 logs, source files, metadata, and commits.
 
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-image2-4k"
 $env:APINEBULA_API_KEY = "<your-api-key>"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "wide anime mountain valley at sunrise, cinematic 16:9 composition, no text or watermark" `
   --quality high `
   --timeout 1800 `
@@ -52,7 +53,7 @@ To select Flare for one request (or replace its name with
 `gpt-image-2.5-sunburst` to select Sunburst):
 
 ```powershell
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --model "gpt-image-2.5-flare" `
   --prompt "wide anime mountain valley at sunrise, cinematic 16:9 composition, no text or watermark" `
   --quality high `
@@ -64,7 +65,7 @@ For multiple outputs use `--n 1` through `--n 10`. For an edit, repeat
 `--reference` for each local image:
 
 ```powershell
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "preserve the line art and characters; replace only the foreground dish with a manga-style dish" `
   --reference .\input.png `
   --quality high `

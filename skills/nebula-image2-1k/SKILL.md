@@ -31,14 +31,15 @@ it to Gemini or Image2 4K.
 
 ## Invocation
 
-The package is self-contained and requires only Python 3.9+ standard-library
-modules. Read the key from the process environment and never place a real key
+The package is self-contained and requires only Python standard-library
+modules. Prefer `run.ps1`; it finds Codex bundled Python, then `python`, then
+the Windows `py` launcher. Read the key from the process environment and never place a real key
 in a prompt, source file, metadata file, or commit.
 
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-image2-1k"
 $env:APINEBULA_API_KEY = "<your-api-key>"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "a clean anime landscape after rain, no text or watermark" `
   --quality high `
   --output .\image2-1k.png
@@ -47,7 +48,7 @@ python "$skill\scripts\generate_image.py" `
 To use another model accepted by the same group:
 
 ```powershell
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --model "your-model-name" `
   --prompt "a clean anime landscape after rain, no text or watermark" `
   --output .\image2-1k-custom-model.png
@@ -56,7 +57,7 @@ python "$skill\scripts\generate_image.py" `
 For an edit, repeat `--reference` for each local image:
 
 ```powershell
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "replace only the foreground tomatoes with manga-style stir-fried beef; preserve the rest" `
   --reference .\input.jpg `
   --size 1536x1024 `

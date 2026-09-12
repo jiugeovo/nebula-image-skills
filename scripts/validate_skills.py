@@ -27,6 +27,7 @@ REQUIRED_FILES = (
     "agents/openai.yaml",
     "scripts/config.json",
     "scripts/generate_image.py",
+    "run.ps1",
 )
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="

@@ -25,8 +25,9 @@ translate the request to an Images API request.
 
 ## Invocation
 
-The package is self-contained and requires only Python 3.9+ standard-library
-modules. Read the key from the process environment and never put a real key
+The package is self-contained and requires only Python standard-library
+modules. Prefer `run.ps1`; it finds Codex bundled Python, then `python`, then
+the Windows `py` launcher. Read the key from the process environment and never put a real key
 in a prompt, source file, metadata file, or commit. Select another configured
 model with `--model` or `APINEBULA_NANOBANANA_MODEL`.
 The command-line option takes priority, followed by the environment variable,
@@ -37,7 +38,7 @@ through `--model`; otherwise let the runner resolve the environment/default.
 ```powershell
 $skill = Join-Path $env:USERPROFILE ".codex\skills\nebula-nanobanana"
 $env:APINEBULA_API_KEY = "<your-api-key>"
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "an anime spring landscape above a sea of clouds, no text or watermark" `
   --resolution 2K `
   --aspect-ratio 16:9 `
@@ -47,7 +48,7 @@ python "$skill\scripts\generate_image.py" `
 For an edit, repeat `--reference` for each local image:
 
 ```powershell
-python "$skill\scripts\generate_image.py" `
+& "$skill\run.ps1" `
   --prompt "keep the original illustration and replace only the red food with flat manga-style stir-fried beef" `
   --reference .\input.jpg `
   --resolution 1K `
